@@ -9,6 +9,7 @@ import com.bybit.api.client.service.BybitApiClientFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 
 import java.sql.Timestamp;
@@ -26,6 +27,7 @@ public class QuoteService {
     private final BybitApiMarketRestClient marketClient =
             BybitApiClientFactory.newInstance(BybitApiConfig.MAINNET_DOMAIN, false).newMarketDataRestClient();
 
+    @Transactional
     public Flux<Quote> getUpToDateQuotes(String symbol, String timeframe) {
         MarketInterval marketInterval = convertToMarketInterval(timeframe);
 
@@ -43,12 +45,11 @@ public class QuoteService {
                     Timestamp latestTimestamp = getLatestTimestamp(symbol, marketInterval);
                     Timestamp startTime = new Timestamp(latestQuote.getTimestamp().getTime() + 1);
 
-                    log.info("Fetching quotes from {} to {}.", startTime, latestTimestamp);
+                    log.debug("Fetching quotes from {} to {}.", startTime, latestTimestamp);
 
-                    // If we already have the latest data
                     if (startTime.after(latestTimestamp)) {
                         log.info("Database already has the latest quotes.");
-                        return repository.findAllBySymbolAndMarketInterval(symbol, timeframe);
+                        return repository.findAllBySymbolAndMarketInterval(symbol, marketInterval.name());
                     }
 
                     return fetchMissingQuotes(symbol, marketInterval, startTime, latestTimestamp);
