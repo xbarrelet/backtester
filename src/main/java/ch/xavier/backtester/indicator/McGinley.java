@@ -2,11 +2,13 @@ package ch.xavier.backtester.indicator;
 
 import ch.xavier.backtester.quote.Quote;
 import lombok.AllArgsConstructor;
+import lombok.Getter;
 
 import java.util.List;
 
 @AllArgsConstructor
-public class McGinleyDynamic implements Indicator {
+@Getter
+public class McGinley implements Indicator {
     private final int length;
 
     @Override

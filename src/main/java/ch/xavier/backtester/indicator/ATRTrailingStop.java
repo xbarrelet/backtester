@@ -7,7 +7,7 @@ import lombok.Getter;
 import java.util.List;
 
 @AllArgsConstructor
-public class TrailingStop {
+public class ATRTrailingStop {
     private final int length;
     private final double multiplier;
     private final String priceSource; // "hl2", "close", "open", etc.
