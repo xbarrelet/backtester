@@ -1,21 +1,22 @@
-package ch.xavier.backtester.backtesting;
+package ch.xavier.backtester.backtesting.model;
 
 import ch.xavier.backtester.marketphase.MarketPhaseClassifier;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
-import java.util.ArrayList;
 import java.util.List;
 
-@Data
 @Builder
+@Getter
+@Setter
 public class Position {
     private double entryPrice;
     private double size;
-    private double currentStopPrice;
-    private double targetPrice;
+    private double currentStopLossPrice;
+    private double takeProfitPrice;
     private boolean isLong;
     private int entryIndex;
     private MarketPhaseClassifier.MarketPhase marketPhase;
-    private List<Double> priceHistory = new ArrayList<>();
+    private List<Double> priceHistory;
 }

@@ -1,6 +1,6 @@
 package ch.xavier.backtester.visualization;
 
-import ch.xavier.backtester.backtesting.BacktestResult;
+import ch.xavier.backtester.backtesting.model.BacktestResult;
 import ch.xavier.backtester.marketphase.MarketPhaseClassifier;
 import ch.xavier.backtester.quote.Quote;
 import lombok.extern.slf4j.Slf4j;

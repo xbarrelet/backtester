@@ -31,6 +31,8 @@ Alternative Approaches
 -  Test parameters across multiple symbols/timeframes
 -  Choose parameters that work well across different markets
 
+grid search, genetic algorithms, and machine learning methods?
+
 Avoiding Overfitting
 Use longer testing periods covering different market regimes
 Apply statistical significance tests to results

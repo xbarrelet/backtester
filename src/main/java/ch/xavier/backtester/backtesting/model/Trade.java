@@ -1,4 +1,4 @@
-package ch.xavier.backtester.backtesting;
+package ch.xavier.backtester.backtesting.model;
 
 import ch.xavier.backtester.marketphase.MarketPhaseClassifier;
 import lombok.AllArgsConstructor;

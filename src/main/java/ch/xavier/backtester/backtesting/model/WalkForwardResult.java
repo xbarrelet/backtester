@@ -1,4 +1,4 @@
-package ch.xavier.backtester.backtesting;
+package ch.xavier.backtester.backtesting.model;
 
 import ch.xavier.backtester.marketphase.MarketPhaseClassifier;
 import lombok.AllArgsConstructor;
@@ -12,5 +12,5 @@ import java.util.Map;
 public class WalkForwardResult {
     private final List<BacktestResult> windowResults;
     private final BacktestResult aggregatedResult;
-    private final Map<MarketPhaseClassifier.MarketPhase, Integer> optimalParameters;
+    private final Map<MarketPhaseClassifier.MarketPhase, List<ParameterPerformance>> topParametersByPhase;
 }

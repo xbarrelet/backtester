@@ -115,16 +115,17 @@ public class QuoteService {
             }
 
             for (Quote quote : quotes) {
-                allQuotes.add(quote);
-                end = earliestTimestamp + 1;
-                currentStart = earliestTimestamp - (limit * getIntervalMillis(marketInterval)) + 1;
+                if (quote.getTimestamp().getTime() > start) {
+                    allQuotes.add(quote);
+                }
             }
+            end = earliestTimestamp + 1;
+            currentStart = earliestTimestamp - (limit * getIntervalMillis(marketInterval)) + 1;
         }
 
-        repository.saveAll(allQuotes).subscribe();
-
         log.info("Fetched {} quotes for {}/{}", allQuotes.size(), symbol, marketInterval);
-        return Flux.fromIterable(allQuotes);
+        return repository.saveAll(allQuotes)
+                .thenMany(repository.findAllBySymbolAndMarketInterval(symbol, marketInterval.name()));
     }
 
     private static MarketInterval convertToMarketInterval(String timeframe) {
