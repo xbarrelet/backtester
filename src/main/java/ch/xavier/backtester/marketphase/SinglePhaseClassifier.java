@@ -11,7 +11,7 @@ public class SinglePhaseClassifier implements MarketPhaseClassifier {
     private final MarketPhase phase;
 
     public SinglePhaseClassifier() {
-        this(MarketPhase.UNKNOWN); // Default to UNKNOWN
+        this(MarketPhase.SINGLE); // Default to UNKNOWN
     }
 
     @Override

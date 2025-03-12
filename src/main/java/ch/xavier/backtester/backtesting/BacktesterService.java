@@ -38,7 +38,6 @@ public class BacktesterService {
 
         // Generate all possible parameter combinations
         List<Map<String, Object>> allCombinations = generateParameterCombinations(parameterGrid);
-        log.info("Testing {} parameter combinations using {} metric", allCombinations.size(), metricType);
 
         return Flux.fromIterable(allCombinations)
                 .flatMap(combination -> {

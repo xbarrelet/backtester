@@ -20,10 +20,7 @@ import java.util.stream.Stream;
 @Slf4j
 public class WalkForwardService {
 
-    private static final int TOP_RESULTS_COUNT = 10;
-
     private final BacktesterService backtesterService;
-
 
     public WalkForwardService(BacktesterService backtesterService) {
         this.backtesterService = backtesterService;
@@ -44,7 +41,8 @@ public class WalkForwardService {
             TradingParameters params,
             Map<String, List<Object>> parameterGrid,
             MarketPhaseClassifier classifier,
-            PerformanceMetricType metricType) {
+            PerformanceMetricType metricType,
+            int numberOfResultsToKeep) {
 
         // Convert days to number of candles based on quote frequency
         int msPerCandle = estimateMillisecondsPerCandles(quotes);
@@ -74,16 +72,17 @@ public class WalkForwardService {
                     List<Quote> testData = quotes.subList(testStart, testEnd);
 
                     String trainStartDate = formatDate(quotes.get(trainStart).getTimestamp());
-                    String trainEndDate = formatDate(quotes.get(trainEnd-1).getTimestamp());
+                    String trainEndDate = formatDate(quotes.get(trainEnd - 1).getTimestamp());
                     String testStartDate = formatDate(quotes.get(testStart).getTimestamp());
-                    String testEndDate = formatDate(quotes.get(testEnd-1).getTimestamp());
+                    String testEndDate = formatDate(quotes.get(testEnd - 1).getTimestamp());
 
                     log.info("Window {}: Training on {} to {} (quotes {}-{}), testing on {} to {} (quotes {}-{})",
                             window, trainStartDate, trainEndDate, trainStart, trainEnd,
                             testStartDate, testEndDate, testStart, testEnd);
 
                     // Find top parameter sets on training data
-                    return findTopParameters(trainData, strategyFactory, params, allCombinations)
+                    return findTopParameters(trainData, strategyFactory, params, allCombinations, numberOfResultsToKeep,
+                            metricType)
                             .flatMap(topParams -> {
                                 // Create strategy with the best parameters
                                 Map<String, Object> bestParams = topParams.getFirst().getParameters();
@@ -107,8 +106,8 @@ public class WalkForwardService {
                                             existingList.addAll(topParams);
                                             // Sort by performance metric and keep top 10
                                             existingList.sort(Comparator.comparing(ParameterPerformance::getPerformanceMetric).reversed());
-                                            return existingList.size() > TOP_RESULTS_COUNT ?
-                                                    existingList.subList(0, TOP_RESULTS_COUNT) : existingList;
+                                            return existingList.size() > numberOfResultsToKeep ?
+                                                    existingList.subList(0, numberOfResultsToKeep) : existingList;
                                         }
                                     });
                                 }
@@ -162,7 +161,9 @@ public class WalkForwardService {
             List<Quote> trainData,
             Function<Map<String, Object>, TradingStrategy> strategyFactory,
             TradingParameters params,
-            List<Map<String, Object>> allCombinations) {
+            List<Map<String, Object>> allCombinations,
+            int numberOfResultsToKeep,
+            PerformanceMetricType metricType) {
 
         // Run backtest for each parameter combination
         return Flux.fromIterable(allCombinations)
@@ -173,7 +174,7 @@ public class WalkForwardService {
                             .map(result -> new ParameterPerformance(
                                     combination,
                                     result,
-                                    result.getSharpeRatio()  // Using Sharpe as the performance metric
+                                    getPerformanceMetric(result, metricType)  // Using Sharpe as the performance metric
                             ));
                 })
                 .collectList()
@@ -182,8 +183,8 @@ public class WalkForwardService {
                     results.sort(Comparator.comparing(ParameterPerformance::getPerformanceMetric).reversed());
 
                     // Return top 10 results (or all if fewer)
-                    return results.size() > TOP_RESULTS_COUNT ?
-                            results.subList(0, TOP_RESULTS_COUNT) : results;
+                    return results.size() > numberOfResultsToKeep ?
+                            results.subList(0, numberOfResultsToKeep) : results;
                 });
     }
 
@@ -368,5 +369,17 @@ public class WalkForwardService {
 
     private int convertDaysToCandles(int days, int msPerCandle) {
         return (int) (TimeUnit.DAYS.toMillis(days) / msPerCandle);
+    }
+
+    private double getPerformanceMetric(BacktestResult result, PerformanceMetricType metricType) {
+        return switch (metricType) {
+            case SHARPE_RATIO -> result.getSharpeRatio();
+            case SORTINO_RATIO -> result.getSortinoRatio();
+            case WIN_RATE -> result.getWinRate();
+            case PROFIT_FACTOR -> result.getProfitFactor();
+            case TOTAL_RETURN -> result.getTotalReturn();
+            case MAXIMUM_DRAWDOWN -> -result.getMaxDrawdown(); // Negative because lower is better
+            default -> result.getSortinoRatio();
+        };
     }
 }

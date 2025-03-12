@@ -6,7 +6,7 @@ import java.util.List;
 
 public interface MarketPhaseClassifier {
     enum MarketPhase {
-        BULLISH, BEARISH, SIDEWAYS, UNKNOWN
+        BULLISH, BEARISH, SIDEWAYS, UNKNOWN, SINGLE
     }
 
     MarketPhase classify(List<Quote> quotes, int index);
