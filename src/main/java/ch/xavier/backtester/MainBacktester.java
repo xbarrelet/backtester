@@ -7,11 +7,12 @@ import ch.xavier.backtester.backtesting.model.BacktestResult;
 import ch.xavier.backtester.backtesting.model.ParameterPerformance;
 import ch.xavier.backtester.backtesting.model.PerformanceMetricType;
 import ch.xavier.backtester.backtesting.model.TradingParameters;
-import ch.xavier.backtester.marketphase.*;
+import ch.xavier.backtester.marketphase.MarketPhaseClassifier;
+import ch.xavier.backtester.marketphase.SinglePhaseClassifier;
 import ch.xavier.backtester.quote.Quote;
 import ch.xavier.backtester.quote.QuoteService;
-import ch.xavier.backtester.strategy.SMACrossoverStrategy;
-import ch.xavier.backtester.visualization.XChartVisualizer;
+import ch.xavier.backtester.strategy.StrategiesFactory;
+import ch.xavier.backtester.strategy.TradingStrategy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -24,17 +25,26 @@ import java.util.stream.IntStream;
 public class MainBacktester {
 
     public MainBacktester(@Autowired QuoteService quoteService,
-                          @Autowired XChartVisualizer visualizer,
                           @Autowired BacktesterService backtesterService,
                           @Autowired WalkForwardService walkForwardService) {
 
         // BACKTESTING PARAMETERS
         String symbol = "BTC";
         String timeframe = "1h";
-        int numberOfResultsToKeep = 5;
         PerformanceMetricType metricType = PerformanceMetricType.TOTAL_RETURN;
+        int numberOfResultsToKeep = 5;
+
+        String strategyName = "SMACrossover";
+        Map<String, List<Object>> parametersGrid = Map.of(
+                "fastPeriod", generateIntRange(10, 30, 2),
+                "slowPeriod", generateIntRange(50, 200, 10),
+                "useTrailingSL", List.of("true", "false")
+        );
+
 
         log.info("Starting backtesting!");
+
+        TradingParameters parameters = TradingParameters.builder().build();
 
         List<Quote> quotes = quoteService.getUpToDateQuotes(symbol, timeframe)
                 .sort(Comparator.comparing(quote -> quote.getTimestamp().getTime()))
@@ -42,38 +52,30 @@ public class MainBacktester {
                 .block();
         log.info("Retrieved {} quotes for backtesting", quotes.size());
 
-        // 90% training, 10% validation
-        int splitIndex = (int) (quotes.size() * 0.9);
-        List<Quote> trainingQuotes = quotes.subList(0, splitIndex);
-        List<Quote> validationQuotes = quotes.subList(splitIndex, quotes.size());
-        log.info("Split quotes into {} training quotes and {} validation quotes",
-                trainingQuotes.size(), validationQuotes.size());
-
-//        MarketPhaseClassifier classifier = new CombinedMarketPhaseClassifier(List.of(
+        //        MarketPhaseClassifier classifier = new CombinedMarketPhaseClassifier(List.of(
 //                new MovingAverageClassifier(20, 100, 0.01),
 //                new VolatilityClassifier(20, 0.015, 0.035))
 //        );
         MarketPhaseClassifier classifier = new SinglePhaseClassifier();
 
-
+        // 90% training, 10% validation
+        int splitIndex = (int) (quotes.size() * 0.9);
+        List<Quote> trainingQuotes = quotes.subList(0, splitIndex);
+        List<Quote> validationQuotes = quotes.subList(splitIndex, quotes.size());
         Map<MarketPhaseClassifier.MarketPhase, List<Quote>> validationPhases =
-                classifyQuotesPerMarketPhase(validationQuotes, classifier, false);
+                classifyQuotesPerMarketPhase(validationQuotes, classifier);
+        log.info("Split quotes into {} training quotes and {} validation quotes",
+                trainingQuotes.size(), validationQuotes.size());
+
         disableWalkForwardServiceLogs();
-
         log.info("Starting optimization");
-
-        TradingParameters parameters = TradingParameters.builder().build();
-
-        Map<String, List<Object>> parameterGrid = new HashMap<>();
-        parameterGrid.put("fastMaPeriod", generateIntRange(10, 30, 2));
-        parameterGrid.put("slowMaPeriod", generateIntRange(50, 200, 10));
 
 
         backtestWithValidation(backtesterService, trainingQuotes, validationPhases, parameters,
-                parameterGrid, classifier, metricType, numberOfResultsToKeep);
+                parametersGrid, classifier, metricType, numberOfResultsToKeep, strategyName);
 
         backtestUsingWalkForwarding(walkForwardService, backtesterService, trainingQuotes, validationPhases,
-                parameters, parameterGrid, classifier, metricType, numberOfResultsToKeep);
+                parameters, parametersGrid, classifier, metricType, numberOfResultsToKeep, strategyName);
     }
 
     private void disableWalkForwardServiceLogs() {
@@ -87,10 +89,11 @@ public class MainBacktester {
                                                Map<String, List<Object>> parameterGrid,
                                                MarketPhaseClassifier classifier,
                                                PerformanceMetricType metricType,
-                                               int numberOfResultsToKeep) {
+                                               int numberOfResultsToKeep,
+                                               String strategyName) {
         // Classify training data by market phase
         Map<MarketPhaseClassifier.MarketPhase, List<Quote>> trainingPhases =
-                classifyQuotesPerMarketPhase(trainingQuotes, classifier, false);
+                classifyQuotesPerMarketPhase(trainingQuotes, classifier);
 
         // For each market phase, find best parameters and validate them
         trainingPhases.forEach((phase, phaseQuotes) -> {
@@ -103,7 +106,7 @@ public class MainBacktester {
 
             backtesterService.backtestParameterGrid(
                             phaseQuotes,
-                            params -> createStrategy(params, parameters),
+                            strategyName,
                             parameters,
                             parameterGrid,
                             metricType,
@@ -123,7 +126,7 @@ public class MainBacktester {
 
                             if (phaseValidationQuotes != null && !phaseValidationQuotes.isEmpty()) {
                                 validateBestParameters(backtesterService, phase, topParamsList,
-                                        phaseValidationQuotes, parameters);
+                                        phaseValidationQuotes, parameters, strategyName);
                             } else {
                                 log.info("No validation data available for {} market phase", phase);
                             }
@@ -140,15 +143,17 @@ public class MainBacktester {
                                                     Map<String, List<Object>> parameterGrid,
                                                     MarketPhaseClassifier classifier,
                                                     PerformanceMetricType metricType,
-                                                    int numberOfResultsToKeep) {
+                                                    int numberOfResultsToKeep,
+                                                    String strategyName) {
         walkForwardService.runWalkForward(trainingQuotes,
-                        params -> createStrategy(params, parameters),
+                        strategyName,
                         parameters,
                         parameterGrid,
                         classifier,
                         metricType,
                         numberOfResultsToKeep)
                 .subscribe(result -> {
+                    log.info("");
                     log.info("Walk-forward results:");
                     log.info("Win rate: {}%, Total return: {}%",
                             String.format("%.2f", result.getAggregatedResult().getWinRate() * 100),
@@ -172,7 +177,7 @@ public class MainBacktester {
 
                             if (phaseValidationQuotes != null && !phaseValidationQuotes.isEmpty()) {
                                 validateBestParameters(backtesterService, phase, topParamsList,
-                                        phaseValidationQuotes, parameters);
+                                        phaseValidationQuotes, parameters, strategyName);
                             } else {
                                 log.info("No validation data available for {} market phase", phase);
                             }
@@ -182,7 +187,7 @@ public class MainBacktester {
     }
 
     private static Map<MarketPhaseClassifier.MarketPhase, List<Quote>> classifyQuotesPerMarketPhase(
-            List<Quote> quotes, MarketPhaseClassifier classifier, boolean includeUnknownPhase) {
+            List<Quote> quotes, MarketPhaseClassifier classifier) {
         Map<MarketPhaseClassifier.MarketPhase, List<Quote>> marketPhaseQuotes = new HashMap<>();
 
         for (int i = 0; i < quotes.size(); i++) {
@@ -190,10 +195,7 @@ public class MainBacktester {
             marketPhaseQuotes.computeIfAbsent(phase, _ -> new ArrayList<>()).add(quotes.get(i));
         }
 
-        if (!includeUnknownPhase) {
-            marketPhaseQuotes.remove(MarketPhaseClassifier.MarketPhase.UNKNOWN);
-        }
-
+        marketPhaseQuotes.remove(MarketPhaseClassifier.MarketPhase.UNKNOWN);
         return marketPhaseQuotes;
     }
 
@@ -208,12 +210,13 @@ public class MainBacktester {
                                                MarketPhaseClassifier.MarketPhase phase,
                                                List<Map<String, Object>> paramsList,
                                                List<Quote> validationQuotes,
-                                               TradingParameters parameters) {
+                                               TradingParameters parameters,
+                                               String strategyName) {
         for (int i = 0; i < paramsList.size(); i++) {
-            Map<String, Object> params = paramsList.get(i);
+            Map<String, Object> strategyParameters = paramsList.get(i);
             final int rank = i + 1;
 
-            SMACrossoverStrategy strategy = createStrategy(params, parameters);
+            TradingStrategy strategy = StrategiesFactory.getStrategy(strategyName, parameters, strategyParameters);
 
             backtesterService.backtest(validationQuotes, strategy, phase, parameters)
                     .subscribe(result -> {
@@ -222,7 +225,7 @@ public class MainBacktester {
                                 rank,
                                 phase,
                                 validationQuotes.size(),
-                                params,
+                                strategyParameters,
                                 result.getTotalTrades(),
                                 String.format("%.2f", result.getTotalReturn() * 100),
                                 String.format("%.2f", result.getWinRate() * 100),
@@ -233,18 +236,10 @@ public class MainBacktester {
         }
     }
 
-    private static SMACrossoverStrategy createStrategy(Map<String, Object> params,
-                                                       TradingParameters parameters) {
-        int fastMaPeriod = Integer.parseInt(params.get("fastMaPeriod").toString());
-        int slowMaPeriod = Integer.parseInt(params.get("slowMaPeriod").toString());
-
-        String name = String.format("SMA Crossover (%d,%d)", fastMaPeriod, slowMaPeriod);
-        return new SMACrossoverStrategy(name, parameters, fastMaPeriod, slowMaPeriod);
-    }
-
     private static void logGridResults(MarketPhaseClassifier.MarketPhase phase,
                                        PerformanceMetricType metricType,
                                        List<ParameterPerformance> results) {
+        log.info("");
         log.info("Grid search results for {} market phase (top 10 parameter combinations by {}):",
                 phase, metricType);
         for (int i = 0; i < results.size(); i++) {

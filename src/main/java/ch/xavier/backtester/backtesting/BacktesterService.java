@@ -3,6 +3,7 @@ package ch.xavier.backtester.backtesting;
 import ch.xavier.backtester.backtesting.model.*;
 import ch.xavier.backtester.marketphase.MarketPhaseClassifier;
 import ch.xavier.backtester.quote.Quote;
+import ch.xavier.backtester.strategy.StrategiesFactory;
 import ch.xavier.backtester.strategy.TradingStrategy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -12,7 +13,6 @@ import reactor.core.scheduler.Schedulers;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -21,27 +21,25 @@ public class BacktesterService {
 
     /**
      * Performs grid search backtesting across all parameter combinations
-     * @param quotes List of quotes for backtesting
-     * @param strategyFactory Function to create strategy from parameters
-     * @param params Trading parameters
-     * @param parameterGrid Map of parameter names to possible values
+     *
+     * @param quotes          List of quotes for backtesting
+     * @param strategyName    Name of the strategy to backtest on
+     * @param params          Trading parameters
+     * @param parametersGrid  Map of parameter names to possible values
      * @param topResultsCount Number of top results to return
      * @return List of top parameter combinations with their results
      */
     public Mono<List<ParameterPerformance>> backtestParameterGrid(
             List<Quote> quotes,
-            Function<Map<String, Object>, TradingStrategy> strategyFactory,
+            String strategyName,
             TradingParameters params,
-            Map<String, List<Object>> parameterGrid,
+            Map<String, List<Object>> parametersGrid,
             PerformanceMetricType metricType,
             int topResultsCount) {
 
-        // Generate all possible parameter combinations
-        List<Map<String, Object>> allCombinations = generateParameterCombinations(parameterGrid);
-
-        return Flux.fromIterable(allCombinations)
+        return Flux.fromIterable(StrategiesFactory.generateAllStrategyParameters(parametersGrid))
                 .flatMap(combination -> {
-                    TradingStrategy strategy = strategyFactory.apply(combination);
+                    TradingStrategy strategy = StrategiesFactory.getStrategy(strategyName, params, combination);
                     return backtest(quotes, strategy, MarketPhaseClassifier.MarketPhase.UNKNOWN, params)
                             .map(result -> new ParameterPerformance(
                                     combination,
@@ -68,69 +66,19 @@ public class BacktesterService {
         };
     }
 
-    // Reusing parameter combination generation from WalkForwardService
-    private List<Map<String, Object>> generateParameterCombinations(Map<String, List<Object>> parameterGrid) {
-        List<Map<String, Object>> combinations = new ArrayList<>();
-        generateCombinations(new HashMap<>(), new ArrayList<>(parameterGrid.entrySet()), 0, combinations);
-        return combinations;
-    }
-
-    private void generateCombinations(
-            Map<String, Object> current,
-            List<Map.Entry<String, List<Object>>> entries,
-            int index,
-            List<Map<String, Object>> result) {
-
-        if (index == entries.size()) {
-            result.add(new HashMap<>(current));
-            return;
-        }
-
-        Map.Entry<String, List<Object>> entry = entries.get(index);
-        String paramName = entry.getKey();
-        List<Object> values = entry.getValue();
-
-        for (Object value : values) {
-            current.put(paramName, value);
-            generateCombinations(current, entries, index + 1, result);
-        }
-    }
-
     /**
      * Performs backtest for a specific strategy in a specific market phase
-     * @param quotes List of quotes for backtesting
+     *
+     * @param quotes   List of quotes for backtesting
      * @param strategy Trading strategy to test
-     * @param phase Market phase classification
-     * @param params Trading parameters
+     * @param phase    Market phase classification
+     * @param params   Trading parameters
      * @return Backtest result
      */
     public Mono<BacktestResult> backtest(List<Quote> quotes, TradingStrategy strategy,
                                          MarketPhaseClassifier.MarketPhase phase, TradingParameters params) {
         return Mono.fromCallable(() -> executeBacktest(quotes, strategy, phase, params))
                 .subscribeOn(Schedulers.parallel());
-    }
-
-    /**
-     * Backtest multiple strategies across multiple market phases
-     * @param phaseQuotes Map of market phase to quotes
-     * @param strategies List of strategies to test
-     * @param params Trading parameters
-     * @return Map of strategy name to backtest results
-     */
-    public Mono<Map<String, BacktestResult>> backtestMultipleStrategies(
-            Map<MarketPhaseClassifier.MarketPhase, List<Quote>> phaseQuotes,
-            List<TradingStrategy> strategies,
-            TradingParameters params) {
-
-        Map<String, BacktestResult> results = new ConcurrentHashMap<>();
-
-        return Flux.fromIterable(strategies)
-                .flatMap(strategy -> {
-                    String strategyName = strategy.getName();
-                    return backtestStrategyAcrossPhases(strategyName, strategy, phaseQuotes, params)
-                            .doOnNext(result -> results.put(strategyName, result));
-                })
-                .then(Mono.just(results));
     }
 
     /**
@@ -250,7 +198,7 @@ public class BacktesterService {
         // Close remaining open positions
         if (!openPositions.isEmpty() && !quotes.isEmpty()) {
             Quote lastQuote = quotes.get(quotes.size() - 1);
-            closeAllPositions(openPositions, lastQuote, quotes, quotes.size() - 1, completedTrades, params);
+            closeAllPositions(openPositions, lastQuote, quotes, completedTrades, params);
         }
 
         // Calculate final day's return
@@ -272,7 +220,7 @@ public class BacktesterService {
         Map<MarketPhaseClassifier.MarketPhase, BacktestResult> phaseResults = new HashMap<>();
         phaseResults.put(phase, result);
         result.setPhaseResults(phaseResults);
-        result.setStrategyName(strategy.getName());
+        result.setStrategyName(strategy.getClass().getSimpleName());
 
         return result;
     }
@@ -345,24 +293,8 @@ public class BacktesterService {
         }
     }
 
-    private static boolean shouldExitPosition(Position position, double lowestPrice, double highestPrice) {
-        // Check for target hit using high/low prices
-        if ((position.isLong() && highestPrice >= position.getTakeProfitPrice()) ||
-                (!position.isLong() && lowestPrice <= position.getTakeProfitPrice())) {
-            return true;
-        }
-
-        // Check for stop hit using low/high prices
-        if ((position.isLong() && lowestPrice <= position.getCurrentStopLossPrice()) ||
-                (!position.isLong() && highestPrice >= position.getCurrentStopLossPrice())) {
-            return true;
-        }
-
-        return false;
-    }
-
     private void closeAllPositions(List<Position> positions, Quote quote, List<Quote> allQuotes,
-                                   int index, List<Trade> completedTrades, TradingParameters params) {
+                                   List<Trade> completedTrades, TradingParameters params) {
         double closePrice = quote.getClose().doubleValue();
         double highPrice = quote.getHigh().doubleValue();
         double lowPrice = quote.getLow().doubleValue();

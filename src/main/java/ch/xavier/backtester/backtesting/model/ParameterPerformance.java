@@ -10,5 +10,5 @@ import java.util.Map;
 public class ParameterPerformance {
     private final Map<String, Object> parameters;
     private final BacktestResult result;
-    private final double performanceMetric; // Store the metric used for ranking (e.g., Sharpe)
+    private final double performanceMetric;
 }

@@ -3,8 +3,10 @@ package ch.xavier.backtester.backtesting;
 import ch.xavier.backtester.backtesting.model.*;
 import ch.xavier.backtester.marketphase.MarketPhaseClassifier;
 import ch.xavier.backtester.quote.Quote;
+import ch.xavier.backtester.strategy.StrategiesFactory;
 import ch.xavier.backtester.strategy.TradingStrategy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -12,7 +14,6 @@ import reactor.core.publisher.Mono;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -20,24 +21,21 @@ import java.util.stream.Stream;
 @Slf4j
 public class WalkForwardService {
 
-    private final BacktesterService backtesterService;
-
-    public WalkForwardService(BacktesterService backtesterService) {
-        this.backtesterService = backtesterService;
-    }
+    @Autowired
+    private BacktesterService backtesterService;
 
     /**
      * Performs walk-forward optimization and testing
      *
-     * @param quotes          Full dataset of quotes
-     * @param strategyFactory Function to create strategy with different parameters
-     * @param params          Trading parameters with walk-forward settings
-     * @param parameterGrid   Map of parameter name to list of values to test
+     * @param quotes        Full dataset of quotes
+     * @param strategyName  Name of the strategy to optimize
+     * @param params        Trading parameters with walk-forward settings
+     * @param parameterGrid Map of parameter name to list of values to test
      * @return Walk-forward optimization results
      */
     public Mono<WalkForwardResult> runWalkForward(
             List<Quote> quotes,
-            Function<Map<String, Object>, TradingStrategy> strategyFactory,
+            String strategyName,
             TradingParameters params,
             Map<String, List<Object>> parameterGrid,
             MarketPhaseClassifier classifier,
@@ -55,7 +53,7 @@ public class WalkForwardService {
         List<BacktestResult> outOfSampleResults = new ArrayList<>();
 
         // Generate all possible parameter combinations
-        List<Map<String, Object>> allCombinations = generateParameterCombinations(parameterGrid);
+        List<Map<String, Object>> allCombinations = StrategiesFactory.generateAllStrategyParameters(parameterGrid);
 
         return Flux.range(0, (quotes.size() - trainCandles - testCandles) / stepCandles + 1)
                 .flatMap(window -> {
@@ -81,12 +79,13 @@ public class WalkForwardService {
                             testStartDate, testEndDate, testStart, testEnd);
 
                     // Find top parameter sets on training data
-                    return findTopParameters(trainData, strategyFactory, params, allCombinations, numberOfResultsToKeep,
+                    return findTopParameters(trainData, strategyName, params, allCombinations, numberOfResultsToKeep,
                             metricType)
                             .flatMap(topParams -> {
                                 // Create strategy with the best parameters
                                 Map<String, Object> bestParams = topParams.getFirst().getParameters();
-                                TradingStrategy optimizedStrategy = strategyFactory.apply(topParams.getFirst().getParameters());
+                                TradingStrategy optimizedStrategy = StrategiesFactory.getStrategy(strategyName, params,
+                                        topParams.getFirst().getParameters());
 
                                 // Log the best parameters
                                 log.info("Window {}: Best parameters: {}, Performance metric: {}",
@@ -159,7 +158,7 @@ public class WalkForwardService {
 
     private Mono<List<ParameterPerformance>> findTopParameters(
             List<Quote> trainData,
-            Function<Map<String, Object>, TradingStrategy> strategyFactory,
+            String strategyName,
             TradingParameters params,
             List<Map<String, Object>> allCombinations,
             int numberOfResultsToKeep,
@@ -168,7 +167,7 @@ public class WalkForwardService {
         // Run backtest for each parameter combination
         return Flux.fromIterable(allCombinations)
                 .flatMap(combination -> {
-                    TradingStrategy strategy = strategyFactory.apply(combination);
+                    TradingStrategy strategy = StrategiesFactory.getStrategy(strategyName, params, combination);
                     return backtesterService.backtest(trainData, strategy,
                                     MarketPhaseClassifier.MarketPhase.UNKNOWN, params)
                             .map(result -> new ParameterPerformance(
@@ -325,34 +324,6 @@ public class WalkForwardService {
                 (mean - dailyRiskFree) / downsideDeviation * Math.sqrt(252) : 0;
 
         return new double[]{sharpeRatio, sortinoRatio};
-    }
-
-
-    private List<Map<String, Object>> generateParameterCombinations(Map<String, List<Object>> parameterGrid) {
-        List<Map<String, Object>> combinations = new ArrayList<>();
-        generateCombinations(new HashMap<>(), new ArrayList<>(parameterGrid.entrySet()), 0, combinations);
-        return combinations;
-    }
-
-    private void generateCombinations(
-            Map<String, Object> current,
-            List<Map.Entry<String, List<Object>>> entries,
-            int index,
-            List<Map<String, Object>> result) {
-
-        if (index == entries.size()) {
-            result.add(new HashMap<>(current));
-            return;
-        }
-
-        Map.Entry<String, List<Object>> entry = entries.get(index);
-        String paramName = entry.getKey();
-        List<Object> values = entry.getValue();
-
-        for (Object value : values) {
-            current.put(paramName, value);
-            generateCombinations(current, entries, index + 1, result);
-        }
     }
 
     private int estimateMillisecondsPerCandles(List<Quote> quotes) {

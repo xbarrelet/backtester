@@ -3,25 +3,15 @@ package ch.xavier.backtester.strategy;
 import ch.xavier.backtester.backtesting.model.Position;
 import ch.xavier.backtester.backtesting.model.TradingParameters;
 import ch.xavier.backtester.quote.Quote;
-import lombok.Getter;
 
 import java.util.List;
+import java.util.Map;
 
 public abstract class BaseStrategy implements TradingStrategy {
-    @Getter
-    protected final String name;
-
     protected boolean useTrailingSL = false;
     protected final TradingParameters parameters;
 
-    public BaseStrategy(String name, TradingParameters parameters) {
-        this.name = name;
-        this.parameters = parameters != null ? parameters : TradingParameters.builder().build();
-    }
-
-    public BaseStrategy(String name, TradingParameters parameters, boolean useTrailingSL) {
-        this.name = name;
-        this.useTrailingSL = useTrailingSL;
+    public BaseStrategy(TradingParameters parameters) {
         this.parameters = parameters != null ? parameters : TradingParameters.builder().build();
     }
 
@@ -63,6 +53,13 @@ public abstract class BaseStrategy implements TradingStrategy {
         }
     }
 
+    @Override
+    public void setParameters(Map<String, Object> parameters) {
+        if (parameters.containsKey("useTrailingSL")) {
+            this.useTrailingSL = parameters.get("useTrailingSL").equals("true");
+        }
+    }
+
     // The ATR measures the average range between the high and low prices of an asset over a given period.
     // A higher ATR indicates more volatility, while a lower ATR indicates less volatility.
     protected double calculateATR(List<Quote> quotes, int index, int length) {
@@ -82,5 +79,4 @@ public abstract class BaseStrategy implements TradingStrategy {
 
         return sum / length;
     }
-
 }

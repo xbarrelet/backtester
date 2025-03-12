@@ -6,29 +6,16 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.util.List;
+import java.util.Map;
 
 @Getter
 @Setter
 public class SMACrossoverStrategy extends BaseStrategy {
-    private final int fastPeriod;
-    private final int slowPeriod;
+    private int fastPeriod;
+    private int slowPeriod;
 
-    public SMACrossoverStrategy(TradingParameters parameters) {
-        this("SMA Crossover (50,200)", parameters, 50, 200);
-    }
-
-    public SMACrossoverStrategy(String name, TradingParameters parameters, int fastPeriod, int slowPeriod) {
-        super(name, parameters);
-        this.fastPeriod = fastPeriod;
-        this.slowPeriod = slowPeriod;
-    }
-
-    public SMACrossoverStrategy(String name, TradingParameters parameters, int fastPeriod, int slowPeriod,
-                                boolean useTrailingSL) {
-        super(name, parameters);
-        this.fastPeriod = fastPeriod;
-        this.slowPeriod = slowPeriod;
-        this.useTrailingSL = useTrailingSL;
+    public SMACrossoverStrategy(TradingParameters tradingParameters) {
+        super(tradingParameters);
     }
 
     @Override
@@ -61,5 +48,17 @@ public class SMACrossoverStrategy extends BaseStrategy {
         }
 
         return sum / period;
+    }
+
+    @Override
+    public void setParameters(Map<String, Object> parameters) {
+        super.setParameters(parameters);
+
+        if (parameters.containsKey("fastPeriod")) {
+            this.fastPeriod = (int) parameters.get("fastPeriod");
+        }
+        if (parameters.containsKey("slowPeriod")) {
+            this.slowPeriod = (int) parameters.get("slowPeriod");
+        }
     }
 }

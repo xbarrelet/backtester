@@ -4,13 +4,9 @@ import ch.xavier.backtester.backtesting.model.Position;
 import ch.xavier.backtester.quote.Quote;
 
 import java.util.List;
+import java.util.Map;
 
 public interface TradingStrategy {
-    /**
-     * Get strategy name for reporting
-     */
-    String getName();
-
     /**
      * Generate trading signal
      * @return 1 for long, -1 for short, 0 for no signal
@@ -39,4 +35,6 @@ public interface TradingStrategy {
      * @return new stop price
      */
     double updateStopLoss(Position position, List<Quote> quotes, int index);
+
+    void setParameters(Map<String, Object> parameters);
 }
