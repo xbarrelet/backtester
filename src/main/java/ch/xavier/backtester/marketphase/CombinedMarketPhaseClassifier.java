@@ -3,10 +3,7 @@ package ch.xavier.backtester.marketphase;
 import ch.xavier.backtester.quote.Quote;
 import lombok.AllArgsConstructor;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @AllArgsConstructor
 public class CombinedMarketPhaseClassifier implements MarketPhaseClassifier {
@@ -22,16 +19,30 @@ public class CombinedMarketPhaseClassifier implements MarketPhaseClassifier {
         }
 
         // Find phase with most votes
-        MarketPhase winner = MarketPhase.UNKNOWN;
+        List<MarketPhase> winners = new ArrayList<>();
         int maxVotes = 0;
 
         for (Map.Entry<MarketPhase, Integer> entry : votes.entrySet()) {
+            if (entry.getKey() == MarketPhase.UNKNOWN) continue;
+
             if (entry.getValue() > maxVotes) {
                 maxVotes = entry.getValue();
-                winner = entry.getKey();
+                winners.clear();
+                winners.add(entry.getKey());
+            } else if (entry.getValue() == maxVotes) {
+                winners.add(entry.getKey());
             }
         }
 
-        return winner;
+        // If no clear winner or tie
+        if (winners.isEmpty()) {
+            return MarketPhase.UNKNOWN;
+        } else if (winners.size() == 1) {
+            return winners.get(0);
+        } else {
+            // Deterministic tiebreaking
+            int hash = Objects.hash(quotes.get(index).getTimestamp().getTime());
+            return winners.get(Math.abs(hash % winners.size()));
+        }
     }
 }

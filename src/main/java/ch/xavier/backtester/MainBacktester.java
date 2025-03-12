@@ -7,8 +7,7 @@ import ch.xavier.backtester.backtesting.model.BacktestResult;
 import ch.xavier.backtester.backtesting.model.ParameterPerformance;
 import ch.xavier.backtester.backtesting.model.PerformanceMetricType;
 import ch.xavier.backtester.backtesting.model.TradingParameters;
-import ch.xavier.backtester.marketphase.MarketPhaseClassifier;
-import ch.xavier.backtester.marketphase.SinglePhaseClassifier;
+import ch.xavier.backtester.marketphase.*;
 import ch.xavier.backtester.quote.Quote;
 import ch.xavier.backtester.quote.QuoteService;
 import ch.xavier.backtester.strategy.StrategiesFactory;
@@ -31,8 +30,8 @@ public class MainBacktester {
         // BACKTESTING PARAMETERS
         String symbol = "BTC";
         String timeframe = "1h";
-        PerformanceMetricType metricType = PerformanceMetricType.TOTAL_RETURN;
-        int numberOfResultsToKeep = 5;
+        PerformanceMetricType metricType = PerformanceMetricType.SHARPE_RATIO;
+        int numberOfResultsToKeep = 3;
 
         String strategyName = "SMACrossover";
         Map<String, List<Object>> parametersGrid = Map.of(
@@ -52,11 +51,14 @@ public class MainBacktester {
                 .block();
         log.info("Retrieved {} quotes for backtesting", quotes.size());
 
-        //        MarketPhaseClassifier classifier = new CombinedMarketPhaseClassifier(List.of(
+        TrendClassifier classifier = new TrendClassifier(50);
+//        MovingWindowClassifier classifier = new MovingWindowClassifier(new TrendClassifier(50), 24, 0.6);
+//        MarketPhaseClassifier classifier = new CombinedMarketPhaseClassifier(List.of(
+//                new TrendClassifier(50),
 //                new MovingAverageClassifier(20, 100, 0.01),
-//                new VolatilityClassifier(20, 0.015, 0.035))
-//        );
-        MarketPhaseClassifier classifier = new SinglePhaseClassifier();
+//                new VolatilityClassifier(20, 0.015, 0.035)
+//        ));
+//        MarketPhaseClassifier classifier = new SinglePhaseClassifier();
 
         // 90% training, 10% validation
         int splitIndex = (int) (quotes.size() * 0.9);
@@ -245,13 +247,26 @@ public class MainBacktester {
         for (int i = 0; i < results.size(); i++) {
             ParameterPerformance perf = results.get(i);
             BacktestResult result = perf.getResult();
-            log.info("#{}: Parameters: {}, {}: {}, Return: {}%, Win rate: {}%",
+//            log.info("#{}: Parameters: {}, {}: {}, Return: {}%, Win rate: {}%",
+//                    i + 1,
+//                    perf.getParameters(),
+//                    metricType,
+//                    String.format("%.2f", perf.getPerformanceMetric()),
+//                    String.format("%.2f", result.getTotalReturn() * 100),
+//                    String.format("%.2f", result.getWinRate() * 100));
+//
+            log.info("Validating #{} parameters for {} market using these parameters: {}. " +
+                            "Trades: {}, Return: {}%, Win rate: {}%, Sharpe: {}, Sortino: {}, Max Drawdown: {}%",
                     i + 1,
+                    phase,
                     perf.getParameters(),
-                    metricType,
-                    String.format("%.2f", perf.getPerformanceMetric()),
+                    result.getTotalTrades(),
                     String.format("%.2f", result.getTotalReturn() * 100),
-                    String.format("%.2f", result.getWinRate() * 100));
+                    String.format("%.2f", result.getWinRate() * 100),
+                    String.format("%.2f", result.getSharpeRatio()),
+                    String.format("%.2f", result.getSortinoRatio()),
+                    String.format("%.2f", result.getMaxDrawdown() * 100));
         }
     }
 }
+
