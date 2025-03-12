@@ -31,9 +31,8 @@ public class MainBacktester {
         // BACKTESTING PARAMETERS
         String symbol = "BTC";
         String timeframe = "1h";
-        int numberOfResultsToKeep = 3;
-        PerformanceMetricType metricType = PerformanceMetricType.WIN_RATE;
-
+        int numberOfResultsToKeep = 5;
+        PerformanceMetricType metricType = PerformanceMetricType.TOTAL_RETURN;
 
         log.info("Starting backtesting!");
 
@@ -115,11 +114,15 @@ public class MainBacktester {
 
                         // Validate if we have results and validation data for this phase
                         if (!results.isEmpty()) {
-                            Map<String, Object> bestParams = results.getFirst().getParameters();
+                            // Extract all top parameter sets
+                            List<Map<String, Object>> topParamsList = results.stream()
+                                    .map(ParameterPerformance::getParameters)
+                                    .toList();
+
                             List<Quote> phaseValidationQuotes = validationPhases.get(phase);
 
                             if (phaseValidationQuotes != null && !phaseValidationQuotes.isEmpty()) {
-                                validateBestParameters(backtesterService, phase, bestParams,
+                                validateBestParameters(backtesterService, phase, topParamsList,
                                         phaseValidationQuotes, parameters);
                             } else {
                                 log.info("No validation data available for {} market phase", phase);
@@ -155,15 +158,20 @@ public class MainBacktester {
                     result.getTopParametersByPhase().forEach((phase, params) -> {
                         log.info("Top parameters for {} market:", phase);
                         params.forEach(p -> log.info("Parameters: {}, {}: {}",
-                                p.getParameters(), metricType.name(), String.format("%.2f", p.getPerformanceMetric())));
+                                p.getParameters(), metricType.name(),
+                                String.format("%.2f", p.getPerformanceMetric())));
 
-                        // Validate the best parameters if we have validation data for this phase
+                        // Validate all top parameters if we have validation data for this phase
                         if (!params.isEmpty()) {
-                            Map<String, Object> bestParams = params.getFirst().getParameters();
+                            // Extract all parameter sets
+                            List<Map<String, Object>> topParamsList = params.stream()
+                                    .map(ParameterPerformance::getParameters)
+                                    .toList();
+
                             List<Quote> phaseValidationQuotes = validationPhases.get(phase);
 
                             if (phaseValidationQuotes != null && !phaseValidationQuotes.isEmpty()) {
-                                validateBestParameters(backtesterService, phase, bestParams,
+                                validateBestParameters(backtesterService, phase, topParamsList,
                                         phaseValidationQuotes, parameters);
                             } else {
                                 log.info("No validation data available for {} market phase", phase);
@@ -198,25 +206,31 @@ public class MainBacktester {
 
     private static void validateBestParameters(BacktesterService backtesterService,
                                                MarketPhaseClassifier.MarketPhase phase,
-                                               Map<String, Object> bestParams,
+                                               List<Map<String, Object>> paramsList,
                                                List<Quote> validationQuotes,
                                                TradingParameters parameters) {
-        SMACrossoverStrategy strategy = createStrategy(bestParams, parameters);
+        for (int i = 0; i < paramsList.size(); i++) {
+            Map<String, Object> params = paramsList.get(i);
+            final int rank = i + 1;
 
-        backtesterService.backtest(validationQuotes, strategy, phase, parameters)
-                .subscribe(result -> {
-                    log.info("Validating best parameters for {} market on {} quotes using these parameters: {}. " +
-                                    "Trades: {}, Return: {}%, Win rate: {}%, Sharpe: {}, Sortino: {}, Max Drawdown: {}%",
-                            phase,
-                            validationQuotes.size(),
-                            bestParams,
-                            result.getTotalTrades(),
-                            String.format("%.2f", result.getTotalReturn() * 100),
-                            String.format("%.2f", result.getWinRate() * 100),
-                            String.format("%.2f", result.getSharpeRatio()),
-                            String.format("%.2f", result.getSortinoRatio()),
-                            String.format("%.2f", result.getMaxDrawdown() * 100));
-                });
+            SMACrossoverStrategy strategy = createStrategy(params, parameters);
+
+            backtesterService.backtest(validationQuotes, strategy, phase, parameters)
+                    .subscribe(result -> {
+                        log.info("Validating #{} parameters for {} market on {} quotes using these parameters: {}. " +
+                                        "Trades: {}, Return: {}%, Win rate: {}%, Sharpe: {}, Sortino: {}, Max Drawdown: {}%",
+                                rank,
+                                phase,
+                                validationQuotes.size(),
+                                params,
+                                result.getTotalTrades(),
+                                String.format("%.2f", result.getTotalReturn() * 100),
+                                String.format("%.2f", result.getWinRate() * 100),
+                                String.format("%.2f", result.getSharpeRatio()),
+                                String.format("%.2f", result.getSortinoRatio()),
+                                String.format("%.2f", result.getMaxDrawdown() * 100));
+                    });
+        }
     }
 
     private static SMACrossoverStrategy createStrategy(Map<String, Object> params,

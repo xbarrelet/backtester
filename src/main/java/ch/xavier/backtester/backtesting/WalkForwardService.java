@@ -174,7 +174,7 @@ public class WalkForwardService {
                             .map(result -> new ParameterPerformance(
                                     combination,
                                     result,
-                                    getPerformanceMetric(result, metricType)  // Using Sharpe as the performance metric
+                                    getPerformanceMetric(result, metricType)
                             ));
                 })
                 .collectList()
