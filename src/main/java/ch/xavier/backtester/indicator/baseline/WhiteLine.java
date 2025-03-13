@@ -1,13 +1,18 @@
-package ch.xavier.backtester.indicator;
+package ch.xavier.backtester.indicator.baseline;
 
+import ch.xavier.backtester.indicator.Indicator;
 import ch.xavier.backtester.quote.Quote;
-import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.List;
 
-@AllArgsConstructor
+@NoArgsConstructor
+@Setter
+@Getter
 public class WhiteLine implements Indicator {
-    private final int length;
+    private int length;
 
     @Override
     public double calculate(int index, List<Quote> quotes) {

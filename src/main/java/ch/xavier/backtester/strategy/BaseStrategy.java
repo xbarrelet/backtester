@@ -1,7 +1,7 @@
 package ch.xavier.backtester.strategy;
 
 import ch.xavier.backtester.backtesting.model.Position;
-import ch.xavier.backtester.backtesting.model.TradingParameters;
+import ch.xavier.backtester.backtesting.TradingParameters;
 import ch.xavier.backtester.quote.Quote;
 
 import java.util.List;
@@ -16,27 +16,65 @@ public abstract class BaseStrategy implements TradingStrategy {
     }
 
     @Override
-    public double calculatePositionSize(double availableFunds, Quote quote, double stopPrice) {
+    public double calculatePositionSize(double availableFunds, Quote quote, double stopLossPrice) {
+        double close = quote.getClose().doubleValue();
         double riskAmount = availableFunds * parameters.getRiskPerTrade();
-        double stopDistance = Math.abs(quote.getClose().doubleValue() - stopPrice);
-        return (riskAmount / stopDistance) * parameters.getLeverage() / quote.getClose().doubleValue();
+        double priceDifference = Math.abs(close - stopLossPrice);
+
+        // Account for slippage
+        double slippage = close * parameters.getSlippage();
+        priceDifference += slippage;
+
+        // Account for fees, limit orders
+        double entryFee = close * parameters.getMakerFee();
+        double exitFee = stopLossPrice * parameters.getMakerFee();
+        double totalCost = priceDifference + entryFee + exitFee;
+
+        // Ensure we don't divide by zero
+        if (totalCost <= 0) {
+            return 0;
+        }
+
+        return (riskAmount / totalCost) * parameters.getLeverage();
     }
 
     @Override
     public double calculateStopLossPrice(boolean isLong, List<Quote> quotes, int index) {
-        double atr = calculateATR(quotes, index, parameters.getAtrLength());
         double price = quotes.get(index).getClose().doubleValue();
-        return isLong ? price - (atr * parameters.getAtrMultiplier())
-                : price + (atr * parameters.getAtrMultiplier());
+        double atr = calculateATR(quotes, index, parameters.getAtrLength());
+        double atrStop = isLong ?
+                price - (atr * parameters.getAtrMultiplier()) :
+                price + (atr * parameters.getAtrMultiplier());
+
+        // Calculate maximum allowable stop loss distance
+        double maxStopDistance = price * parameters.getMaxStopLoss();
+        double maxStopPrice = isLong ?
+                price - maxStopDistance :
+                price + maxStopDistance;
+
+        // Use the stop that's CLOSER to the entry price (more conservative)
+        return isLong ?
+                Math.max(atrStop, maxStopPrice) : // For longs, take the higher stop price (closer to entry)
+                Math.min(atrStop, maxStopPrice);  // For shorts, take the lower stop price (closer to entry)
     }
 
     @Override
     public double calculateTakeProfitPrice(boolean isLong, List<Quote> quotes, int index) {
-        double stopDistance = Math.abs(quotes.get(index).getClose().doubleValue() -
-                calculateStopLossPrice(isLong, quotes, index));
         double price = quotes.get(index).getClose().doubleValue();
-        return isLong ? price + (stopDistance * parameters.getRiskRewardRatio())
-                : price - (stopDistance * parameters.getRiskRewardRatio());
+        double riskAmount = Math.abs(price - calculateStopLossPrice(isLong, quotes, index));
+
+        double defaultTP = isLong ?
+                price + (riskAmount * parameters.getRiskRewardRatio()) :
+                price - (riskAmount * parameters.getRiskRewardRatio());
+
+        // Enforce minimum take profit
+        double minTpPrice = isLong ?
+                price * (1 + parameters.getMinTakeProfit()) :
+                price * (1 - parameters.getMinTakeProfit());
+
+        return isLong ?
+                Math.max(defaultTP, minTpPrice) :
+                Math.min(defaultTP, minTpPrice);
     }
 
     @Override
@@ -44,10 +82,16 @@ public abstract class BaseStrategy implements TradingStrategy {
         if (useTrailingSL) {
             double atr = calculateATR(quotes, index, parameters.getAtrLength());
             double price = quotes.get(index).getClose().doubleValue();
-
-            return position.isLong() ?
+            double newStopLoss = position.isLong() ?
                     price - (atr * parameters.getAtrMultiplier()) :
                     price + (atr * parameters.getAtrMultiplier());
+
+            // Only update if the new stop is better than the current one
+            if (position.isLong()) {
+                return Math.max(position.getCurrentStopLossPrice(), newStopLoss);
+            } else {
+                return Math.min(position.getCurrentStopLossPrice(), newStopLoss);
+            }
         } else {
             return position.getCurrentStopLossPrice();
         }

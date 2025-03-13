@@ -13,6 +13,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,8 +38,12 @@ public class BacktesterService {
             PerformanceMetricType metricType,
             int topResultsCount) {
 
+        AtomicInteger counter = new AtomicInteger(0);
+
         return Flux.fromIterable(StrategiesFactory.generateAllStrategyParameters(parametersGrid))
                 .flatMap(combination -> {
+                    log.info("Counter:{}", counter.incrementAndGet());
+
                     TradingStrategy strategy = StrategiesFactory.getStrategy(strategyName, params, combination);
                     return backtest(quotes, strategy, MarketPhaseClassifier.MarketPhase.UNKNOWN, params)
                             .map(result -> new ParameterPerformance(
@@ -129,7 +134,8 @@ public class BacktesterService {
                                            MarketPhaseClassifier.MarketPhase phase,
                                            TradingParameters params) {
         double equity = params.getInitialCapital();
-        double peak = equity;
+        double maxEquity = equity;
+        double currentDrawdown = 0;
         List<Position> openPositions = new ArrayList<>();
         List<Trade> completedTrades = new ArrayList<>();
 
@@ -189,9 +195,20 @@ public class BacktesterService {
                 }
             }
 
+            if (maxEquity > 0) {
+                currentDrawdown = (maxEquity - equity) / maxEquity;
+
+                // Stop trading if max drawdown exceeded
+                if (currentDrawdown > params.getMaxDrawdown()) {
+                    log.warn("Stopping backtest - max drawdown of {}% exceeded ({}%)",
+                            params.getMaxDrawdown() * 100, currentDrawdown * 100);
+                    break;
+                }
+            }
+
             // Update equity peak for drawdown calculation
-            if (equity > peak) {
-                peak = equity;
+            if (equity > maxEquity) {
+                maxEquity = equity;
             }
         }
 

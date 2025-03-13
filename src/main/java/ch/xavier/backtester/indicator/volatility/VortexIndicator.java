@@ -1,14 +1,19 @@
-package ch.xavier.backtester.indicator;
+package ch.xavier.backtester.indicator.volatility;
 
+import ch.xavier.backtester.indicator.Indicator;
 import ch.xavier.backtester.quote.Quote;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.List;
 
-@AllArgsConstructor
+@NoArgsConstructor
+@Setter
 public class VortexIndicator implements Indicator {
-    private final int length;
+    private int length;
+    private double threshold;
 
     @Override
     public double calculate(int index, List<Quote> quotes) {
@@ -40,6 +45,19 @@ public class VortexIndicator implements Indicator {
         double vortexNeg = vortexMinus / vortexSum;
 
         return new VortexResult(vortexPos, vortexNeg);
+    }
+
+    public int getSignal(int index, List<Quote> quotes) {
+        VortexResult result = calculateResult(index, quotes);
+        if (result.getVortexPos() > result.getVortexNeg()) return 1;
+        if (result.getVortexPos() < result.getVortexNeg()) return -1;
+        return 0;
+    }
+
+    public boolean isSignalConfirmed(int index, List<Quote> quotes) {
+        VortexResult result = calculateResult(index, quotes);
+        double diff = Math.abs(result.getVortexPos() - result.getVortexNeg());
+        return diff > threshold;
     }
 
     private double calculateTR(List<Quote> quotes, int index) {

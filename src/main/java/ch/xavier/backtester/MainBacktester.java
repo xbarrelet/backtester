@@ -6,7 +6,7 @@ import ch.xavier.backtester.backtesting.WalkForwardService;
 import ch.xavier.backtester.backtesting.model.BacktestResult;
 import ch.xavier.backtester.backtesting.model.ParameterPerformance;
 import ch.xavier.backtester.backtesting.model.PerformanceMetricType;
-import ch.xavier.backtester.backtesting.model.TradingParameters;
+import ch.xavier.backtester.backtesting.TradingParameters;
 import ch.xavier.backtester.marketphase.*;
 import ch.xavier.backtester.quote.Quote;
 import ch.xavier.backtester.quote.QuoteService;
@@ -17,6 +17,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
 
 @Service
@@ -29,16 +31,24 @@ public class MainBacktester {
 
         // BACKTESTING PARAMETERS
         String symbol = "BTC";
-        String timeframe = "1h";
-        PerformanceMetricType metricType = PerformanceMetricType.SHARPE_RATIO;
-        int numberOfResultsToKeep = 3;
+        String timeframe = "2h";
+        PerformanceMetricType metricType = PerformanceMetricType.TOTAL_RETURN;
+        int numberOfResultsToKeep = 10;
 
-        String strategyName = "SMACrossover";
+        String strategyName = "VortexStrategy";
         Map<String, List<Object>> parametersGrid = Map.of(
-                "fastPeriod", generateIntRange(10, 30, 2),
-                "slowPeriod", generateIntRange(50, 200, 10),
+                "mcGinleyLength", generateIntRange(7, 24, 3),
+                "whiteLineLength", generateIntRange(10, 30, 5),
+                "tetherFastLength", generateIntRange(8, 20, 2),
+                "tetherSlowLength", generateIntRange(35, 80, 5),
+//                "vortexLength", generateIntRange(10, 20, 2),
+//                "vortexThreshold", generateDoubleRange(0.03, 0.07, 0.01),
                 "useTrailingSL", List.of("true", "false")
         );
+
+        //TODO: Add conditions like max Drawdown, min number of trades, ...
+        // If you use both methods you're going to calculate all indicators twice on the same quotes,
+        // each indicator should have a cache to go faster.
 
 
         log.info("Starting backtesting!");
@@ -51,14 +61,14 @@ public class MainBacktester {
                 .block();
         log.info("Retrieved {} quotes for backtesting", quotes.size());
 
-        TrendClassifier classifier = new TrendClassifier(50);
+//        TrendClassifier classifier = new TrendClassifier(50);
 //        MovingWindowClassifier classifier = new MovingWindowClassifier(new TrendClassifier(50), 24, 0.6);
 //        MarketPhaseClassifier classifier = new CombinedMarketPhaseClassifier(List.of(
 //                new TrendClassifier(50),
 //                new MovingAverageClassifier(20, 100, 0.01),
 //                new VolatilityClassifier(20, 0.015, 0.035)
 //        ));
-//        MarketPhaseClassifier classifier = new SinglePhaseClassifier();
+        MarketPhaseClassifier classifier = new SinglePhaseClassifier();
 
         // 90% training, 10% validation
         int splitIndex = (int) (quotes.size() * 0.9);
@@ -76,8 +86,8 @@ public class MainBacktester {
         backtestWithValidation(backtesterService, trainingQuotes, validationPhases, parameters,
                 parametersGrid, classifier, metricType, numberOfResultsToKeep, strategyName);
 
-        backtestUsingWalkForwarding(walkForwardService, backtesterService, trainingQuotes, validationPhases,
-                parameters, parametersGrid, classifier, metricType, numberOfResultsToKeep, strategyName);
+//        backtestUsingWalkForwarding(walkForwardService, backtesterService, trainingQuotes, validationPhases,
+//                parameters, parametersGrid, classifier, metricType, numberOfResultsToKeep, strategyName);
     }
 
     private void disableWalkForwardServiceLogs() {
@@ -105,6 +115,7 @@ public class MainBacktester {
             }
 
             log.info("Optimizing for {} market phase with {} quotes", phase, phaseQuotes.size());
+            AtomicInteger phaseProgress = new AtomicInteger(0);
 
             backtesterService.backtestParameterGrid(
                             phaseQuotes,
@@ -208,6 +219,13 @@ public class MainBacktester {
                 .toList();
     }
 
+    private static List<Object> generateDoubleRange(double from, double to, double interval) {
+        return DoubleStream.iterate(from, n -> n <= to, n -> n + interval)
+                .boxed()
+                .map(i -> (Object) i)
+                .toList();
+    }
+
     private static void validateBestParameters(BacktesterService backtesterService,
                                                MarketPhaseClassifier.MarketPhase phase,
                                                List<Map<String, Object>> paramsList,
@@ -255,7 +273,7 @@ public class MainBacktester {
 //                    String.format("%.2f", result.getTotalReturn() * 100),
 //                    String.format("%.2f", result.getWinRate() * 100));
 //
-            log.info("Validating #{} parameters for {} market using these parameters: {}. " +
+            log.info("Result #{} parameters for {} market using these parameters: {}. " +
                             "Trades: {}, Return: {}%, Win rate: {}%, Sharpe: {}, Sortino: {}, Max Drawdown: {}%",
                     i + 1,
                     phase,

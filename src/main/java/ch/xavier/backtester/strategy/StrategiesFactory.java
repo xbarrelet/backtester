@@ -1,6 +1,8 @@
 package ch.xavier.backtester.strategy;
 
-import ch.xavier.backtester.backtesting.model.TradingParameters;
+import ch.xavier.backtester.backtesting.TradingParameters;
+import ch.xavier.backtester.strategy.concrete.SMACrossoverStrategy;
+import ch.xavier.backtester.strategy.concrete.VortexStrategy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -41,12 +43,14 @@ public class StrategiesFactory {
             result = newCombinations;
         }
 
+        log.info("Backtesting {} strategy parameter combinations.", result.size());
         return result;
     }
 
     private static TradingStrategy getStrategy(String strategyName, TradingParameters tradingParameters) {
         switch (strategyName){
             case "SMACrossover": return new SMACrossoverStrategy(tradingParameters);
+            case "VortexStrategy": return new VortexStrategy(tradingParameters);
 
             default: {
                 log.error("Unknown strategy name: {}", strategyName);

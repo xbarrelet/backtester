@@ -1,7 +1,8 @@
-package ch.xavier.backtester.strategy;
+package ch.xavier.backtester.strategy.concrete;
 
-import ch.xavier.backtester.backtesting.model.TradingParameters;
+import ch.xavier.backtester.backtesting.TradingParameters;
 import ch.xavier.backtester.quote.Quote;
+import ch.xavier.backtester.strategy.BaseStrategy;
 import lombok.Getter;
 import lombok.Setter;
 

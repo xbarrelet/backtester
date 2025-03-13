@@ -1,4 +1,4 @@
-package ch.xavier.backtester.backtesting.model;
+package ch.xavier.backtester.backtesting;
 
 import lombok.*;
 
@@ -18,7 +18,10 @@ public class TradingParameters {
     private final double leverage = 10.0;
 
     // Risks
-    private final double maxDrawdown = 0.20; // Stop trading after 20% drawdown
+    private final double maxDrawdown = 0.25; // Stop trading after 20% drawdown
+    private final double minTakeProfit = 0.01; // Minimum 1% take profit
+    private final double maxStopLoss = 0.05; // Maximum 5% stop loss
+
     private final double dailyLossLimit = 0.05; // No more trades after 5% daily loss
     private final double riskRewardRatio = 2.0; // Target 2:1 reward to risk
     private final int atrLength = 14; // Period for ATR stop loss
@@ -35,7 +38,6 @@ public class TradingParameters {
     // - Separate RR for long and short? Same with SL?
     // - Dynamic position size? Based on ATR?
     // - Maximum losing trades per side?
-    // - Min TP and SL?
     // - Additional attunements like RSI big extended, Hurst exponent, etc?
 }
 
