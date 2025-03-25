@@ -47,16 +47,16 @@ public class ATRTrailingStop {
 
     private boolean checkLongStopHit(Quote quote, double longStop) {
         if (useWicks) {
-            return quote.getLow().doubleValue() <= longStop;
+            return quote.getLow() <= longStop;
         }
-        return quote.getClose().doubleValue() <= longStop;
+        return quote.getClose() <= longStop;
     }
 
     private boolean checkShortStopHit(Quote quote, double shortStop) {
         if (useWicks) {
-            return quote.getHigh().doubleValue() >= shortStop;
+            return quote.getHigh() >= shortStop;
         }
-        return quote.getClose().doubleValue() >= shortStop;
+        return quote.getClose() >= shortStop;
     }
 
     private double calculateATR(List<Quote> quotes, int index) {
@@ -68,9 +68,9 @@ public class ATRTrailingStop {
     }
 
     private double calculateTR(List<Quote> quotes, int index) {
-        double high = quotes.get(index).getHigh().doubleValue();
-        double low = quotes.get(index).getLow().doubleValue();
-        double prevClose = quotes.get(index-1).getClose().doubleValue();
+        double high = quotes.get(index).getHigh();
+        double low = quotes.get(index).getLow();
+        double prevClose = quotes.get(index - 1).getClose();
 
         return Math.max(high - low,
                 Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));
@@ -78,16 +78,22 @@ public class ATRTrailingStop {
 
     private double getPriceSource(Quote quote) {
         switch (priceSource) {
-            case "close": return quote.getClose().doubleValue();
-            case "open": return quote.getOpen().doubleValue();
-            case "high": return quote.getHigh().doubleValue();
-            case "low": return quote.getLow().doubleValue();
-            case "ohlc4": return (quote.getOpen().doubleValue() +
-                    quote.getHigh().doubleValue() +
-                    quote.getLow().doubleValue() +
-                    quote.getClose().doubleValue()) / 4;
+            case "close":
+                return quote.getClose();
+            case "open":
+                return quote.getOpen();
+            case "high":
+                return quote.getHigh();
+            case "low":
+                return quote.getLow();
+            case "ohlc4":
+                return (quote.getOpen() +
+                        quote.getHigh() +
+                        quote.getLow() +
+                        quote.getClose()) / 4;
             case "hl2":
-            default: return (quote.getHigh().doubleValue() + quote.getLow().doubleValue()) / 2;
+            default:
+                return (quote.getHigh() + quote.getLow()) / 2;
         }
     }
 

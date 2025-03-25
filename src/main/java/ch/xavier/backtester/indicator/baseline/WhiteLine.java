@@ -17,16 +17,16 @@ public class WhiteLine implements Indicator {
     @Override
     public double calculate(int index, List<Quote> quotes) {
         if (index < length - 1) {
-            return (quotes.get(index).getHigh().doubleValue() +
-                    quotes.get(index).getLow().doubleValue()) / 2;
+            return (quotes.get(index).getHigh() +
+                    quotes.get(index).getLow()) / 2;
         }
 
         double highest = Double.MIN_VALUE;
         double lowest = Double.MAX_VALUE;
 
         for (int i = Math.max(0, index - length + 1); i <= index; i++) {
-            highest = Math.max(highest, quotes.get(i).getHigh().doubleValue());
-            lowest = Math.min(lowest, quotes.get(i).getLow().doubleValue());
+            highest = Math.max(highest, quotes.get(i).getHigh());
+            lowest = Math.min(lowest, quotes.get(i).getLow());
         }
 
         return (highest + lowest) / 2;

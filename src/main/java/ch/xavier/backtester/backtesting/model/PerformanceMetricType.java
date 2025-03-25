@@ -6,5 +6,6 @@ public enum PerformanceMetricType {
     WIN_RATE,
     TOTAL_RETURN,
     PROFIT_FACTOR,
-    MAXIMUM_DRAWDOWN
+    MAXIMUM_DRAWDOWN,
+    COMPOSITE_SCORE
 }

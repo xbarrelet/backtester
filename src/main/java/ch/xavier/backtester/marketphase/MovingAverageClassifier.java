@@ -34,7 +34,7 @@ public class MovingAverageClassifier implements MarketPhaseClassifier {
     private double calculateSMA(List<Quote> quotes, int index, int period) {
         double sum = 0;
         for (int i = Math.max(0, index - period + 1); i <= index; i++) {
-            sum += quotes.get(i).getClose().doubleValue();
+            sum += quotes.get(i).getClose();
         }
         return sum / period;
     }
@@ -49,8 +49,8 @@ public class MovingAverageClassifier implements MarketPhaseClassifier {
             if (idx < 0) continue;
 
             sumX += i;
-            sumY += quotes.get(idx).getClose().doubleValue();
-            sumXY += i * quotes.get(idx).getClose().doubleValue();
+            sumY += quotes.get(idx).getClose();
+            sumXY += i * quotes.get(idx).getClose();
             sumX2 += i * i;
         }
 

@@ -157,7 +157,7 @@ public class TTMSqueeze implements Indicator {
     private double calculateSMA(List<Quote> quotes, int index, int period) {
         double sum = 0;
         for (int i = Math.max(0, index - period + 1); i <= index; i++) {
-            sum += quotes.get(i).getClose().doubleValue();
+            sum += quotes.get(i).getClose();
         }
         return sum / Math.min(period, index + 1);
     }
@@ -165,7 +165,7 @@ public class TTMSqueeze implements Indicator {
     private double calculateStdDev(List<Quote> quotes, int index, int period, double mean) {
         double sum = 0;
         for (int i = Math.max(0, index - period + 1); i <= index; i++) {
-            double diff = quotes.get(i).getClose().doubleValue() - mean;
+            double diff = quotes.get(i).getClose() - mean;
             sum += diff * diff;
         }
         return Math.sqrt(sum / Math.min(period, index + 1));
@@ -180,11 +180,11 @@ public class TTMSqueeze implements Indicator {
     }
 
     private double calculateTR(List<Quote> quotes, int index) {
-        if (index == 0) return quotes.get(0).getHigh().doubleValue() - quotes.get(0).getLow().doubleValue();
+        if (index == 0) return quotes.get(0).getHigh() - quotes.get(0).getLow();
 
-        double highLow = quotes.get(index).getHigh().doubleValue() - quotes.get(index).getLow().doubleValue();
-        double highClosePrev = Math.abs(quotes.get(index).getHigh().doubleValue() - quotes.get(index - 1).getClose().doubleValue());
-        double lowClosePrev = Math.abs(quotes.get(index).getLow().doubleValue() - quotes.get(index - 1).getClose().doubleValue());
+        double highLow = quotes.get(index).getHigh() - quotes.get(index).getLow();
+        double highClosePrev = Math.abs(quotes.get(index).getHigh() - quotes.get(index - 1).getClose());
+        double lowClosePrev = Math.abs(quotes.get(index).getLow() - quotes.get(index - 1).getClose());
 
         return Math.max(Math.max(highLow, highClosePrev), lowClosePrev);
     }
@@ -192,7 +192,7 @@ public class TTMSqueeze implements Indicator {
     private double calculateHighest(List<Quote> quotes, int index, int period) {
         double highest = Double.MIN_VALUE;
         for (int i = Math.max(0, index - period + 1); i <= index; i++) {
-            highest = Math.max(highest, quotes.get(i).getHigh().doubleValue());
+            highest = Math.max(highest, quotes.get(i).getHigh());
         }
         return highest;
     }
@@ -200,7 +200,7 @@ public class TTMSqueeze implements Indicator {
     private double calculateLowest(List<Quote> quotes, int index, int period) {
         double lowest = Double.MAX_VALUE;
         for (int i = Math.max(0, index - period + 1); i <= index; i++) {
-            lowest = Math.min(lowest, quotes.get(i).getLow().doubleValue());
+            lowest = Math.min(lowest, quotes.get(i).getLow());
         }
         return lowest;
     }
@@ -214,7 +214,7 @@ public class TTMSqueeze implements Indicator {
             if (idx < 0) continue;
 
             x[i] = i;
-            y[i] = quotes.get(idx).getClose().doubleValue() - priceAvg;
+            y[i] = quotes.get(idx).getClose() - priceAvg;
         }
 
         return linearRegression(x, y);

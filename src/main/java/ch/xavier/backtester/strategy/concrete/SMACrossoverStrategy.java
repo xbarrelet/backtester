@@ -45,7 +45,7 @@ public class SMACrossoverStrategy extends BaseStrategy {
 
         double sum = 0;
         for (int i = 0; i < period; i++) {
-            sum += quotes.get(index - i).getClose().doubleValue();
+            sum += quotes.get(index - i).getClose();
         }
 
         return sum / period;

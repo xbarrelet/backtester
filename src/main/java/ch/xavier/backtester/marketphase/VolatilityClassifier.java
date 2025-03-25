@@ -40,8 +40,8 @@ public class VolatilityClassifier implements MarketPhaseClassifier {
     private double calculatePriceChange(List<Quote> quotes, int index) {
         if (index < period) return 0;
 
-        double startPrice = quotes.get(index - period).getClose().doubleValue();
-        double endPrice = quotes.get(index).getClose().doubleValue();
+        double startPrice = quotes.get(index - period).getClose();
+        double endPrice = quotes.get(index).getClose();
 
         return (endPrice - startPrice) / startPrice;
     }
@@ -49,7 +49,7 @@ public class VolatilityClassifier implements MarketPhaseClassifier {
     private double calculateSMA(List<Quote> quotes, int index, int period) {
         double sum = 0;
         for (int i = Math.max(0, index - period + 1); i <= index; i++) {
-            sum += quotes.get(i).getClose().doubleValue();
+            sum += quotes.get(i).getClose();
         }
         return sum / period;
     }
@@ -57,7 +57,7 @@ public class VolatilityClassifier implements MarketPhaseClassifier {
     private double calculateStdDev(List<Quote> quotes, int index, int period, double mean) {
         double sum = 0;
         for (int i = Math.max(0, index - period + 1); i <= index; i++) {
-            double diff = quotes.get(i).getClose().doubleValue() - mean;
+            double diff = quotes.get(i).getClose() - mean;
             sum += diff * diff;
         }
         return Math.sqrt(sum / period);

@@ -31,10 +31,10 @@ public class VortexIndicator implements Indicator {
         double vortexSum = 0;
 
         for (int i = Math.max(1, index - length + 1); i <= index; i++) {
-            double high = quotes.get(i).getHigh().doubleValue();
-            double low = quotes.get(i).getLow().doubleValue();
-            double prevHigh = quotes.get(i-1).getHigh().doubleValue();
-            double prevLow = quotes.get(i-1).getLow().doubleValue();
+            double high = quotes.get(i).getHigh();
+            double low = quotes.get(i).getLow();
+            double prevHigh = quotes.get(i-1).getHigh();
+            double prevLow = quotes.get(i-1).getLow();
 
             vortexPlus += Math.abs(high - prevLow);
             vortexMinus += Math.abs(low - prevHigh);
@@ -63,9 +63,9 @@ public class VortexIndicator implements Indicator {
     private double calculateTR(List<Quote> quotes, int index) {
         if (index <= 0) return 0;
 
-        double high = quotes.get(index).getHigh().doubleValue();
-        double low = quotes.get(index).getLow().doubleValue();
-        double prevClose = quotes.get(index-1).getClose().doubleValue();
+        double high = quotes.get(index).getHigh();
+        double low = quotes.get(index).getLow();
+        double prevClose = quotes.get(index-1).getClose();
 
         return Math.max(high - low,
                 Math.max(Math.abs(high - prevClose), Math.abs(low - prevClose)));

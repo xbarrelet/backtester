@@ -11,8 +11,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -20,14 +20,17 @@ import java.util.stream.Collectors;
 @Slf4j
 public class BacktesterService {
 
+
+    private static final ThreadLocal<SimpleDateFormat> QUOTE_DAY_FORMAT =
+            ThreadLocal.withInitial(() -> new SimpleDateFormat("yyyy-MM-dd"));
+
     /**
      * Performs grid search backtesting across all parameter combinations
      *
-     * @param quotes          List of quotes for backtesting
-     * @param strategyName    Name of the strategy to backtest on
-     * @param params          Trading parameters
-     * @param parametersGrid  Map of parameter names to possible values
-     * @param topResultsCount Number of top results to return
+     * @param quotes         List of quotes for backtesting
+     * @param strategyName   Name of the strategy to backtest on
+     * @param params         Trading parameters
+     * @param parametersGrid Map of parameter names to possible values
      * @return List of top parameter combinations with their results
      */
     public Mono<List<ParameterPerformance>> backtestParameterGrid(
@@ -36,28 +39,27 @@ public class BacktesterService {
             TradingParameters params,
             Map<String, List<Object>> parametersGrid,
             PerformanceMetricType metricType,
-            int topResultsCount) {
+            boolean storeTradeDetails) {
 
         AtomicInteger counter = new AtomicInteger(0);
 
         return Flux.fromIterable(StrategiesFactory.generateAllStrategyParameters(parametersGrid))
                 .flatMap(combination -> {
-                    log.info("Counter:{}", counter.incrementAndGet());
+                    int currentTimer = counter.incrementAndGet();
+                    if (currentTimer % 1000 == 0) {
+                        log.info("Counter:{}", currentTimer);
+                    }
 
                     TradingStrategy strategy = StrategiesFactory.getStrategy(strategyName, params, combination);
-                    return backtest(quotes, strategy, MarketPhaseClassifier.MarketPhase.UNKNOWN, params)
+                    return backtest(quotes, strategy, MarketPhaseClassifier.MarketPhase.UNKNOWN, params,
+                            storeTradeDetails)
                             .map(result -> new ParameterPerformance(
                                     combination,
                                     result,
                                     calculateMetricValue(result, metricType)
                             ));
                 })
-                .collectList()
-                .map(results -> {
-                    results.sort(Comparator.comparing(ParameterPerformance::getPerformanceMetric).reversed());
-                    return results.size() > topResultsCount ?
-                            results.subList(0, topResultsCount) : results;
-                });
+                .collectSortedList(Comparator.comparing(ParameterPerformance::getPerformanceMetric).reversed());
     }
 
     private double calculateMetricValue(BacktestResult result, PerformanceMetricType metricType) {
@@ -68,8 +70,68 @@ public class BacktesterService {
             case TOTAL_RETURN -> result.getTotalReturn();
             case PROFIT_FACTOR -> result.getProfitFactor();
             case MAXIMUM_DRAWDOWN -> -result.getMaxDrawdown(); // Negative because lower is better
+            case COMPOSITE_SCORE -> calculateCompositeScore(result);
         };
     }
+
+    public double calculateCompositeScore(BacktestResult result) {
+        // Extract metrics with NaN protection
+        double sharpeRatio = Double.isNaN(result.getSharpeRatio()) ? 0 : result.getSharpeRatio();
+        double sortinoRatio = Double.isNaN(result.getSortinoRatio()) ? 0 : result.getSortinoRatio();
+        double winRate = Double.isNaN(result.getWinRate()) ? 0 : result.getWinRate();
+        double totalReturn = Double.isNaN(result.getTotalReturn()) ? 0 : result.getTotalReturn();
+        double profitFactor = Double.isNaN(result.getProfitFactor()) ? 0 : result.getProfitFactor();
+        double maxDrawdown = Double.isNaN(result.getMaxDrawdown()) ? 1 : result.getMaxDrawdown();
+
+        // Normalize metrics (with safeguards)
+        double normSharpe = normalizeMinMax(sharpeRatio, 0, 3);
+        double normSortino = normalizeMinMax(sortinoRatio, 0, 4);
+        double normWinRate = normalizeMinMax(winRate, 0.3, 0.7);
+        double normReturn = normalizeMinMax(totalReturn, 0, 1.0);
+        double normProfitFactor = normalizeMinMax(profitFactor, 1.0, 3.0);
+        double normDrawdown = normalizeMinMax(-maxDrawdown, -0.5, 0);
+
+        // Weights
+        double weightSharpe = 0.15;
+        double weightSortino = 0.20;
+        double weightWinRate = 0.10;
+        double weightReturn = 0.20;
+        double weightProfitFactor = 0.15;
+        double weightDrawdown = 0.20;
+
+        double score = (normSharpe * weightSharpe) +
+                (normSortino * weightSortino) +
+                (normWinRate * weightWinRate) +
+                (normReturn * weightReturn) +
+                (normProfitFactor * weightProfitFactor) +
+                (normDrawdown * weightDrawdown);
+
+        return Double.isNaN(score) ? 0 : score;
+
+        //Timeframe
+        //For shorter timeframes (day trading): increase weight on win rate and profit factor
+        //For longer timeframes: increase weight on drawdown protection and Sortino ratio
+        //
+        //Market conditions
+        //Trending markets: emphasize total return
+        //Volatile/ranging markets: emphasize drawdown protection and Sortino ratio
+        //
+        //Strategy type
+        //Trend-following: emphasize Sortino ratio and total return
+        //Mean-reversion: emphasize win rate and profit factor
+        //
+        //Risk tolerance
+        //Conservative: increase weights on drawdown and risk-adjusted metrics
+        //Aggressive: increase weights on total return
+    }
+
+    // Helper method for min-max normalization
+    private double normalizeMinMax(double value, double min, double max) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) return 0.5;
+        if (max <= min) return 0.5;
+        return Math.min(Math.max((value - min) / (max - min), 0), 1);
+    }
+
 
     /**
      * Performs backtest for a specific strategy in a specific market phase
@@ -81,85 +143,56 @@ public class BacktesterService {
      * @return Backtest result
      */
     public Mono<BacktestResult> backtest(List<Quote> quotes, TradingStrategy strategy,
-                                         MarketPhaseClassifier.MarketPhase phase, TradingParameters params) {
-        return Mono.fromCallable(() -> executeBacktest(quotes, strategy, phase, params))
+                                         MarketPhaseClassifier.MarketPhase phase, TradingParameters params,
+                                         boolean storeTradeDetails) {
+        return Mono.fromCallable(() -> executeBacktest(quotes, strategy, phase, params, storeTradeDetails))
                 .subscribeOn(Schedulers.parallel());
-    }
-
-    /**
-     * Backtest a single strategy across different market phases
-     */
-    public Mono<BacktestResult> backtestStrategyAcrossPhases(
-            String strategyName,
-            TradingStrategy strategy,
-            Map<MarketPhaseClassifier.MarketPhase, List<Quote>> phaseQuotes,
-            TradingParameters params) {
-
-        Map<MarketPhaseClassifier.MarketPhase, BacktestResult> phaseResults = new ConcurrentHashMap<>();
-
-        return Flux.fromIterable(phaseQuotes.entrySet())
-                .filter(entry -> entry.getKey() != MarketPhaseClassifier.MarketPhase.UNKNOWN &&
-                        !entry.getValue().isEmpty())
-                .flatMap(entry -> {
-                    MarketPhaseClassifier.MarketPhase phase = entry.getKey();
-                    List<Quote> quotes = entry.getValue();
-
-                    log.info("Backtesting {} in {} market phase with {} quotes",
-                            strategyName, phase, quotes.size());
-
-                    return backtest(quotes, strategy, phase, params)
-                            .doOnNext(result -> phaseResults.put(phase, result));
-                })
-                .then(Mono.fromCallable(() -> {
-                    // Combine all trades from different phases
-                    List<Trade> allTrades = phaseResults.values().stream()
-                            .flatMap(result -> result.getTrades().stream())
-                            .collect(Collectors.toList());
-
-                    // Calculate overall metrics
-                    BacktestResult combinedResult = calculateResults(allTrades,
-                            params.getInitialCapital() + allTrades.stream().mapToDouble(Trade::getProfitAmount).sum(),
-                            params.getInitialCapital());
-
-                    combinedResult.setPhaseResults(phaseResults);
-                    combinedResult.setStrategyName(strategyName);
-                    return combinedResult;
-                }));
     }
 
     /**
      * Core backtesting logic - synchronous method called from reactive wrappers
      */
     private BacktestResult executeBacktest(List<Quote> quotes, TradingStrategy strategy,
-                                           MarketPhaseClassifier.MarketPhase phase,
-                                           TradingParameters params) {
-        double equity = params.getInitialCapital();
-        double maxEquity = equity;
-        double currentDrawdown = 0;
+                                           MarketPhaseClassifier.MarketPhase phase, TradingParameters params,
+                                           boolean storeTradeDetails) {
+        double availableFunds = params.getInitialCapital();
+        double maxAccumulatedFunds = availableFunds;
+
         List<Position> openPositions = new ArrayList<>();
         List<Trade> completedTrades = new ArrayList<>();
 
-        // Track daily returns for Sharpe & Sortino calculation
         Map<String, Double> dailyReturns = new HashMap<>();
         String currentDay = "";
-        double dayStartEquity = equity;
+        double dayStartAvailableFunds = availableFunds;
 
         for (int i = 0; i < quotes.size(); i++) {
             Quote quote = quotes.get(i);
 
-            // Track a new day for returns calculation
-            String quoteDay = new java.text.SimpleDateFormat("yyyy-MM-dd").format(quote.getTimestamp());
+            String quoteDay = "";
+            if (quote.getTimestamp() != null) {
+                try {
+                    quoteDay = QUOTE_DAY_FORMAT.get().format(quote.getTimestamp());
+                } catch (Exception e) {
+                    log.error("Invalid timestamp for quote at index {}: {}", i, quote);
+                    continue; // Skip processing this quote
+                }
+            }
 
             if (!quoteDay.equals(currentDay)) {
-                if (!currentDay.isEmpty()) {
-                    dailyReturns.put(currentDay, (equity - dayStartEquity) / dayStartEquity);
+                if (!currentDay.isEmpty() && dayStartAvailableFunds > 0) {
+                    dailyReturns.put(currentDay, (availableFunds - dayStartAvailableFunds) / dayStartAvailableFunds);
                 }
                 currentDay = quoteDay;
-                dayStartEquity = equity;
+                dayStartAvailableFunds = availableFunds;
             }
 
             // Update positions & check for exits
             updatePositions(strategy, openPositions, quote, quotes, i, completedTrades, params);
+
+            if (availableFunds < params.getInitialCapital() * 0.01) {
+                log.debug("Stopping backtest - funds depleted to less than 1% of initial capital");
+                break; // Exit the loop
+            }
 
             // Check if we can open a new position when we have none open
             if (openPositions.isEmpty() && i > 0) {
@@ -170,8 +203,8 @@ public class BacktesterService {
 
                     double stopLossPrice = strategy.calculateStopLossPrice(isLong, quotes, i);
 
-                    double entryPrice = quote.getClose().doubleValue();
-                    double positionSize = strategy.calculatePositionSize(equity, quote, stopLossPrice);
+                    double entryPrice = quote.getClose();
+                    double positionSize = strategy.calculatePositionSize(availableFunds, quote, stopLossPrice);
 
                     double takeProfitPrice = strategy.calculateTakeProfitPrice(isLong, quotes, i);
 
@@ -189,26 +222,15 @@ public class BacktesterService {
 
                     // Account for fees
                     double entryFee = entryPrice * positionSize * params.getTakerFee();
-                    equity -= entryFee;
+                    availableFunds -= entryFee;
 
                     openPositions.add(position);
                 }
             }
 
-            if (maxEquity > 0) {
-                currentDrawdown = (maxEquity - equity) / maxEquity;
-
-                // Stop trading if max drawdown exceeded
-                if (currentDrawdown > params.getMaxDrawdown()) {
-                    log.warn("Stopping backtest - max drawdown of {}% exceeded ({}%)",
-                            params.getMaxDrawdown() * 100, currentDrawdown * 100);
-                    break;
-                }
-            }
-
             // Update equity peak for drawdown calculation
-            if (equity > maxEquity) {
-                maxEquity = equity;
+            if (availableFunds > maxAccumulatedFunds) {
+                maxAccumulatedFunds = availableFunds;
             }
         }
 
@@ -220,11 +242,11 @@ public class BacktesterService {
 
         // Calculate final day's return
         if (!currentDay.isEmpty()) {
-            dailyReturns.put(currentDay, (equity - dayStartEquity) / dayStartEquity);
+            dailyReturns.put(currentDay, (availableFunds - dayStartAvailableFunds) / dayStartAvailableFunds);
         }
 
         // Calculate metrics
-        BacktestResult result = calculateResults(completedTrades, equity, params.getInitialCapital());
+        BacktestResult result = calculateResults(completedTrades, availableFunds, params.getInitialCapital());
 
         // Calculate Sharpe & Sortino using daily returns
         if (!dailyReturns.isEmpty()) {
@@ -239,14 +261,22 @@ public class BacktesterService {
         result.setPhaseResults(phaseResults);
         result.setStrategyName(strategy.getClass().getSimpleName());
 
+        if (!storeTradeDetails) {
+            result.setTrades(null); // Don't store trade details
+        }
+
+        if (!currentDay.isEmpty() && dayStartAvailableFunds > 0) {
+            dailyReturns.put(currentDay, (availableFunds - dayStartAvailableFunds) / dayStartAvailableFunds);
+        }
+
         return result;
     }
 
     private void updatePositions(TradingStrategy strategy, List<Position> positions, Quote quote,
                                  List<Quote> quotes, int index, List<Trade> completedTrades, TradingParameters params) {
-        double highPrice = quote.getHigh().doubleValue();
-        double lowPrice = quote.getLow().doubleValue();
-        double closePrice = quote.getClose().doubleValue();
+        double highPrice = quote.getHigh();
+        double lowPrice = quote.getLow();
+        double closePrice = quote.getClose();
 
         Iterator<Position> iterator = positions.iterator();
 
@@ -255,30 +285,29 @@ public class BacktesterService {
             position.getPriceHistory().add(closePrice);
 
             boolean exitPosition = false;
-            double exitPrice = closePrice; // Default to close price
+            double exitPrice = closePrice;
 
-            // Check for take profit hit - use high for long positions, low for shorts
+            // Check for take profit hit
             if ((position.isLong() && highPrice >= position.getTakeProfitPrice()) ||
                     (!position.isLong() && lowPrice <= position.getTakeProfitPrice())) {
                 exitPosition = true;
-                exitPrice = position.getTakeProfitPrice(); // Use target price as exit price
+                exitPrice = position.getTakeProfitPrice();
             }
 
-            // Check for stop loss hit - use low for long positions, high for shorts
+            // Check for stop loss hit
             else if ((position.isLong() && lowPrice <= position.getCurrentStopLossPrice()) ||
                     (!position.isLong() && highPrice >= position.getCurrentStopLossPrice())) {
                 exitPosition = true;
-                exitPrice = position.getCurrentStopLossPrice(); // Use stop price as exit price
+                exitPrice = position.getCurrentStopLossPrice();
             }
 
             if (exitPosition) {
-                // Calculate profit using the realistic exit price
                 double profit = position.isLong() ?
                         (exitPrice - position.getEntryPrice()) / position.getEntryPrice() :
                         (position.getEntryPrice() - exitPrice) / position.getEntryPrice();
 
                 // Account for fees
-                double exitFee = exitPrice * position.getSize() * params.getTakerFee();
+                double exitFee = exitPrice * position.getSize() * params.getMakerFee();
 
                 // Add trade
                 completedTrades.add(new Trade(
@@ -312,9 +341,9 @@ public class BacktesterService {
 
     private void closeAllPositions(List<Position> positions, Quote quote, List<Quote> allQuotes,
                                    List<Trade> completedTrades, TradingParameters params) {
-        double closePrice = quote.getClose().doubleValue();
-        double highPrice = quote.getHigh().doubleValue();
-        double lowPrice = quote.getLow().doubleValue();
+        double closePrice = quote.getClose();
+        double highPrice = quote.getHigh();
+        double lowPrice = quote.getLow();
 
         for (Position position : positions) {
             // Determine a more realistic exit price
@@ -380,39 +409,69 @@ public class BacktesterService {
     }
 
     private double[] calculateSharpeAndSortino(Map<String, Double> dailyReturns) {
-        // Same implementation as before
-        double sum = dailyReturns.values().stream().mapToDouble(Double::doubleValue).sum();
-        double mean = sum / dailyReturns.size();
+        if (dailyReturns == null || dailyReturns.isEmpty()) {
+            return new double[]{0.0, 0.0};
+        }
 
-        double squaredSum = dailyReturns.values().stream()
-                .mapToDouble(r -> Math.pow(r - mean, 2)).sum();
-        double variance = squaredSum / dailyReturns.size();
+        // Calculate mean return
+        double sum = 0.0;
+        for (Double ret : dailyReturns.values()) {
+            if (!Double.isNaN(ret) && !Double.isInfinite(ret)) {
+                sum += ret;
+            }
+        }
+        double mean = dailyReturns.size() > 0 ? sum / dailyReturns.size() : 0.0;
+
+        // Calculate standard deviation
+        double squaredSum = 0.0;
+        for (Double ret : dailyReturns.values()) {
+            if (!Double.isNaN(ret) && !Double.isInfinite(ret)) {
+                squaredSum += Math.pow(ret - mean, 2);
+            }
+        }
+        double variance = dailyReturns.size() > 0 ? squaredSum / dailyReturns.size() : 0.0;
         double stdDev = Math.sqrt(variance);
 
-        double downsideSquaredSum = dailyReturns.values().stream()
-                .filter(r -> r < 0)
-                .mapToDouble(r -> Math.pow(r, 2))
-                .sum();
-        double downsideDeviation = Math.sqrt(downsideSquaredSum / dailyReturns.size());
+        // Calculate downside deviation
+        double downsideSquaredSum = 0.0;
+        int negativeReturnsCount = 0;
+        for (Double ret : dailyReturns.values()) {
+            if (!Double.isNaN(ret) && !Double.isInfinite(ret) && ret < 0) {
+                downsideSquaredSum += Math.pow(ret, 2);
+                negativeReturnsCount++;
+            }
+        }
 
-        double dailyRiskFree = 0.02 / 365;
+        // Prevent division by zero
+        double downsideDeviation = negativeReturnsCount > 0 ?
+                Math.sqrt(downsideSquaredSum / dailyReturns.size()) : 0.00001;
 
+        double dailyRiskFree = 0.02 / 365; // Annualized 2% risk-free rate converted to daily
+
+        // Calculate ratios with safety checks
         double sharpeRatio = stdDev > 0 ?
                 (mean - dailyRiskFree) / stdDev * Math.sqrt(252) : 0;
         double sortinoRatio = downsideDeviation > 0 ?
                 (mean - dailyRiskFree) / downsideDeviation * Math.sqrt(252) : 0;
 
+        // Guard against NaN/Infinity
+        sharpeRatio = Double.isNaN(sharpeRatio) || Double.isInfinite(sharpeRatio) ? 0 : sharpeRatio;
+        sortinoRatio = Double.isNaN(sortinoRatio) || Double.isInfinite(sortinoRatio) ? 0 : sortinoRatio;
+
         return new double[]{sharpeRatio, sortinoRatio};
     }
 
     private BacktestResult calculateResults(List<Trade> trades, double finalEquity, double initialCapital) {
-        if (trades.isEmpty()) {
+        if (trades == null || trades.isEmpty()) {
             return BacktestResult.builder()
                     .finalFunds(finalEquity)
-                    .totalReturn((finalEquity - initialCapital) / initialCapital)
+                    .totalReturn(0)
                     .winRate(0)
                     .profitFactor(0)
                     .totalTrades(0)
+                    .maxDrawdown(0)
+                    .sharpeRatio(0)
+                    .sortinoRatio(0)
                     .build();
         }
 
@@ -421,20 +480,26 @@ public class BacktesterService {
         double totalProfit = 0;
         double totalLoss = 0;
         double maxDrawdown = 0;
-        double peak = initialCapital;
+        double peak = Math.max(initialCapital, 0.00001); // Ensure non-zero peak
         double equity = initialCapital;
         double sumWinAmount = 0;
         double sumLossAmount = 0;
         long totalDays = 0;
 
         for (Trade trade : trades) {
+            if (trade == null || Double.isNaN(trade.getProfitAmount())) continue;
+
             equity += trade.getProfitAmount();
 
             if (equity > peak) {
                 peak = equity;
             }
-            double drawdown = (peak - equity) / peak;
-            maxDrawdown = Math.max(maxDrawdown, drawdown);
+
+            // Prevent division by zero in drawdown calculation
+            double drawdown = peak > 0 ? Math.min((peak - equity) / peak, 1.0) : 0;
+            if (!Double.isNaN(drawdown) && !Double.isInfinite(drawdown)) {
+                maxDrawdown = Math.max(maxDrawdown, drawdown);
+            }
 
             if (trade.getProfit() > 0) {
                 winningCount++;
@@ -446,25 +511,40 @@ public class BacktesterService {
                 sumLossAmount -= trade.getProfitAmount();
             }
 
-            long tradeDays = (trade.getExitTime().getTime() - trade.getEntryTime().getTime())
-                    / (1000 * 60 * 60 * 24);
-            totalDays += tradeDays;
+            if (trade.getEntryTime() != null && trade.getExitTime() != null) {
+                long tradeDays = (trade.getExitTime().getTime() - trade.getEntryTime().getTime())
+                        / (1000 * 60 * 60 * 24);
+                totalDays += Math.max(0, tradeDays);
+            }
         }
 
-        double winRate = trades.isEmpty() ? 0 : (double) winningCount / trades.size();
-        double profitFactor = totalLoss > 0 ? totalProfit / totalLoss : totalProfit > 0 ? Double.MAX_VALUE : 0;
+        double winRate = trades.size() > 0 ? (double) winningCount / trades.size() : 0;
+        double profitFactor = totalLoss > 0.00001 ? totalProfit / totalLoss : (totalProfit > 0 ? 10 : 0);
         double avgWinAmount = winningCount > 0 ? sumWinAmount / winningCount : 0;
         double avgLossAmount = losingCount > 0 ? sumLossAmount / losingCount : 0;
-        double avgTradeAmount = trades.isEmpty() ? 0 : (sumWinAmount - sumLossAmount) / trades.size();
-        double avgTradeLength = trades.isEmpty() ? 0 : (double) totalDays / trades.size();
+        double avgTradeAmount = trades.size() > 0 ? (sumWinAmount - sumLossAmount) / trades.size() : 0;
+        double avgTradeLength = trades.size() > 0 ? (double) totalDays / trades.size() : 0;
 
-        double totalDaysDouble = (double) totalDays;
-        double annualized = totalDaysDouble > 0 ?
-                Math.pow((finalEquity / initialCapital), (252.0 / totalDaysDouble)) - 1.0 : 0;
+        // Safely calculate return values
+        double totalReturn = initialCapital > 0.00001 ? (finalEquity - initialCapital) / initialCapital : 0;
+        double annualized = 0.0;
+        if (totalDays > 0 && initialCapital > 0.00001 && finalEquity > 0) {
+            try {
+                annualized = Math.pow((finalEquity / initialCapital), (252.0 / totalDays)) - 1.0;
+            } catch (Exception e) {
+                annualized = 0.0;
+            }
+        }
+
+        // Guard against NaN/Infinity
+        if (Double.isNaN(totalReturn) || Double.isInfinite(totalReturn)) totalReturn = 0;
+        if (Double.isNaN(annualized) || Double.isInfinite(annualized)) annualized = 0;
+        if (Double.isNaN(profitFactor) || Double.isInfinite(profitFactor)) profitFactor = 0;
+        if (Double.isNaN(maxDrawdown) || Double.isInfinite(maxDrawdown)) maxDrawdown = 0;
 
         return BacktestResult.builder()
                 .finalFunds(finalEquity)
-                .totalReturn((finalEquity - initialCapital) / initialCapital)
+                .totalReturn(totalReturn)
                 .annualizedReturn(annualized)
                 .profitFactor(profitFactor)
                 .winRate(winRate)
@@ -478,5 +558,63 @@ public class BacktesterService {
                 .avgTradeLength(avgTradeLength)
                 .trades(trades)
                 .build();
+    }
+
+    /**
+     * Performs grid search backtesting across all parameter combinations and evaluates against all metrics
+     * in a single pass, returning the top results for each metric type.
+     */
+    public Mono<Map<PerformanceMetricType, List<ParameterPerformance>>> backtestParameterGridForAllMetrics(
+            List<Quote> quotes,
+            String strategyName,
+            TradingParameters params,
+            Map<String, List<Object>> parametersGrid,
+            int topResultsCount,
+            boolean storeTradeDetails) {
+
+        AtomicInteger counter = new AtomicInteger(0);
+
+        return Flux.fromIterable(StrategiesFactory.generateAllStrategyParameters(parametersGrid))
+                .flatMap(combination -> {
+                    int currentTimer = counter.incrementAndGet();
+                    if (currentTimer % 1000 == 0) {
+                        log.info("Counter:{}", currentTimer);
+                    }
+
+                    TradingStrategy strategy = StrategiesFactory.getStrategy(strategyName, params, combination);
+                    return backtest(quotes, strategy, MarketPhaseClassifier.MarketPhase.UNKNOWN, params,
+                            storeTradeDetails)
+                            .map(result -> new ParameterCombinationResult(combination, result));
+                })
+                .collectList()
+                .map(allResults -> {
+                    Map<PerformanceMetricType, List<ParameterPerformance>> resultsByMetric = new EnumMap<>(PerformanceMetricType.class);
+
+                    // For each metric type, create sorted list of parameter performances
+                    for (PerformanceMetricType metricType : PerformanceMetricType.values()) {
+                        List<ParameterPerformance> metricResults = allResults.stream()
+                                .map(r -> new ParameterPerformance(
+                                        r.parameters,
+                                        r.result,
+                                        calculateMetricValue(r.result, metricType)))
+                                .sorted(Comparator.comparing(ParameterPerformance::getPerformanceMetric).reversed())
+                                .limit(topResultsCount)
+                                .collect(Collectors.toList());
+
+                        resultsByMetric.put(metricType, metricResults);
+                    }
+
+                    return resultsByMetric;
+                });
+    }
+
+    private static class ParameterCombinationResult {
+        private final Map<String, Object> parameters;
+        private final BacktestResult result;
+
+        public ParameterCombinationResult(Map<String, Object> parameters, BacktestResult result) {
+            this.parameters = parameters;
+            this.result = result;
+        }
     }
 }

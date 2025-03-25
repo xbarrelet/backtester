@@ -113,7 +113,7 @@ public class WalkForwardService {
 
                                 // Run backtest on test data with optimal parameters
                                 return backtesterService.backtest(testData, optimizedStrategy,
-                                                MarketPhaseClassifier.MarketPhase.UNKNOWN, params)
+                                                MarketPhaseClassifier.MarketPhase.UNKNOWN, params, false)
                                         .map(result -> {
                                             // Store results
                                             log.info("Window {}: Test results - Win rate: {}%, Return: {}%, Sharpe: {}",
@@ -168,8 +168,8 @@ public class WalkForwardService {
         return Flux.fromIterable(allCombinations)
                 .flatMap(combination -> {
                     TradingStrategy strategy = StrategiesFactory.getStrategy(strategyName, params, combination);
-                    return backtesterService.backtest(trainData, strategy,
-                                    MarketPhaseClassifier.MarketPhase.UNKNOWN, params)
+                    return backtesterService.backtest(trainData, strategy, MarketPhaseClassifier.MarketPhase.UNKNOWN,
+                                    params, true)
                             .map(result -> new ParameterPerformance(
                                     combination,
                                     result,

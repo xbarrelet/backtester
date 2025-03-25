@@ -23,7 +23,7 @@ public class McGinley implements Indicator {
 
         // Iteratively calculate McGinley Dynamic values
         for (int i = length; i <= index; i++) {
-            double close = quotes.get(i).getClose().doubleValue();
+            double close = quotes.get(i).getClose();
             mg = mg + (close - mg) / (length * Math.pow(close / mg, 4));
         }
 
@@ -33,7 +33,7 @@ public class McGinley implements Indicator {
     private double calculateEMA(List<Quote> quotes, int index) {
         double sum = 0;
         for (int i = 0; i <= index; i++) {
-            sum += quotes.get(i).getClose().doubleValue();
+            sum += quotes.get(i).getClose();
         }
         return sum / (index + 1);
     }

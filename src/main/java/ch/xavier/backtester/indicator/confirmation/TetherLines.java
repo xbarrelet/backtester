@@ -42,7 +42,7 @@ public class TetherLines implements Indicator {
     private double calculateHighest(List<Quote> quotes, int index, int period) {
         double highest = Double.MIN_VALUE;
         for (int i = Math.max(0, index - period + 1); i <= index; i++) {
-            highest = Math.max(highest, quotes.get(i).getHigh().doubleValue());
+            highest = Math.max(highest, quotes.get(i).getHigh());
         }
         return highest;
     }
@@ -50,7 +50,7 @@ public class TetherLines implements Indicator {
     private double calculateLowest(List<Quote> quotes, int index, int period) {
         double lowest = Double.MAX_VALUE;
         for (int i = Math.max(0, index - period + 1); i <= index; i++) {
-            lowest = Math.min(lowest, quotes.get(i).getLow().doubleValue());
+            lowest = Math.min(lowest, quotes.get(i).getLow());
         }
         return lowest;
     }

@@ -51,7 +51,7 @@ public class VortexStrategy extends BaseStrategy {
         // Calculate baseline signals
         double mcGinleyValue = macGinleyIndicator.calculate(index, quotes);
         double whiteLineValue = whiteLineIndicator.calculate(index, quotes);
-        double currentPrice = quotes.get(index).getClose().doubleValue();
+        double currentPrice = quotes.get(index).getClose();
 
         // Determine trend based on baseline indicators
         int mcGinleyTrend = Double.compare(currentPrice, mcGinleyValue);
@@ -64,25 +64,23 @@ public class VortexStrategy extends BaseStrategy {
         // Get confirmation signals
 //        boolean ttmLongSignal = ttmSqueezeIndicator.isLongSignal(index, quotes);
 //        boolean ttmShortSignal = ttmSqueezeIndicator.isShortSignal(index, quotes);
-        int tetherTrend = tetherLinesIndicator.getTrend(index, quotes);
+//        int tetherTrend = tetherLinesIndicator.getTrend(index, quotes);
 
         // Get Vortex signal and confirmation
 //        int vortexSignal = vortexIndicator.getSignal(index, quotes);
 //        boolean vortexConfirmed = vortexIndicator.isSignalConfirmed(index, quotes);
-
-        // Check if Vortex confirms (or skip if not using Vortex filter)
 //        boolean vortexLong = vortexSignal == 1 && vortexConfirmed;
 //        boolean vortexShort = vortexSignal == -1 && vortexConfirmed;
 
         // Long signal when all conditions met
 //        if (baselineLong && ttmLongSignal && tetherTrend == 1 && vortexLong) {
-        if (baselineLong && tetherTrend == 1) {
+        if (baselineLong) {
             return 1;
         }
 
         // Short signal when all conditions met
 //        if (baselineShort && ttmShortSignal && tetherTrend == -1 && vortexShort) {
-        if (baselineShort && tetherTrend == -1) {
+        if (baselineShort) {
             return -1;
         }
 

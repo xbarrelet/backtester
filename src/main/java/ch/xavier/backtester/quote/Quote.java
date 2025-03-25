@@ -21,19 +21,19 @@ public class Quote {
     private Long quoteId;
 
     @Column("close")
-    private BigDecimal close;
+    private double close;
 
     @Column("high")
-    private BigDecimal high;
+    private double high;
 
     @Column("low")
-    private BigDecimal low;
+    private double low;
 
     @Column("market_interval")
     private String marketInterval;
 
     @Column("open")
-    private BigDecimal open;
+    private double open;
 
     @Column("symbol")
     private String symbol;
@@ -42,16 +42,16 @@ public class Quote {
     private Timestamp timestamp;
 
     @Column("volume")
-    private BigDecimal volume;
+    private double volume;
 
     public static Quote from(List<String> quoteString, String symbol, String marketInterval) {
         return Quote.builder()
                 .timestamp(new Timestamp(Long.parseLong(String.valueOf(quoteString.get(0)))))
-                .open(new BigDecimal(String.valueOf(quoteString.get(1))))
-                .high(new BigDecimal(String.valueOf(quoteString.get(2))))
-                .low(new BigDecimal(String.valueOf(quoteString.get(3))))
-                .close(new BigDecimal(String.valueOf(quoteString.get(4))))
-                .volume(new BigDecimal(String.valueOf(quoteString.get(5))))
+                .open(Double.parseDouble(String.valueOf(quoteString.get(1))))
+                .high(Double.parseDouble(String.valueOf(quoteString.get(2))))
+                .low(Double.parseDouble(String.valueOf(quoteString.get(3))))
+                .close(Double.parseDouble(String.valueOf(quoteString.get(4))))
+                .volume(Double.parseDouble(String.valueOf(quoteString.get(5))))
                 .symbol(symbol)
                 .marketInterval(marketInterval)
                 .build();

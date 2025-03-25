@@ -55,10 +55,10 @@ public class XChartVisualizer {
 
         for (Quote quote : quotes) {
             xData.add(new Date(quote.getTimestamp().getTime()));
-            openData.add(quote.getOpen().doubleValue());
-            highData.add(quote.getHigh().doubleValue());
-            lowData.add(quote.getLow().doubleValue());
-            closeData.add(quote.getClose().doubleValue());
+            openData.add(quote.getOpen());
+            highData.add(quote.getHigh());
+            lowData.add(quote.getLow());
+            closeData.add(quote.getClose());
         }
 
         OHLCSeries series = chart.addSeries("Price", xData, openData, highData, lowData, closeData);
@@ -119,7 +119,7 @@ public class XChartVisualizer {
 
         for (Quote quote : quotes) {
             xData.add(new Date(quote.getTimestamp().getTime()));
-            yData.add(quote.getClose().doubleValue());
+            yData.add(quote.getClose());
         }
 
         XYSeries series = chart.addSeries(phase, xData, yData);
@@ -168,7 +168,7 @@ public class XChartVisualizer {
                 profitFactors.add(Math.min(result.getProfitFactor(), 5.0)); // Cap at 5 for better visualization
                 returns.add(result.getTotalReturn());
                 drawdowns.add(-result.getMaxDrawdown()); // Negative to show as downward bars
-                periods.add(optimalPeriods.getOrDefault(phase, 0).doubleValue());
+                periods.add(Double.valueOf(optimalPeriods.getOrDefault(phase, 0)));
             }
         }
 

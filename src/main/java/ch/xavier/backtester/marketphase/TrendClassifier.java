@@ -33,7 +33,7 @@ public class TrendClassifier implements MarketPhaseClassifier {
         for (int i = 0; i < n; i++) {
             int idx = index - i;
             double x = i;
-            double y = quotes.get(idx).getClose().doubleValue();
+            double y = quotes.get(idx).getClose();
 
             sumX += x;
             sumY += y;
@@ -53,7 +53,7 @@ public class TrendClassifier implements MarketPhaseClassifier {
         // Fill arrays with data
         for (int i = 0; i < n; i++) {
             x[i] = i;
-            y[i] = quotes.get(index - i).getClose().doubleValue();
+            y[i] = quotes.get(index - i).getClose();
         }
 
         // Calculate means
